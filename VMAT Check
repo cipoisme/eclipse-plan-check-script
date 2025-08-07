@@ -1,0 +1,902 @@
+*********************************  Warnings Summary  *********************************
+ TBI Planning Diagram              OK, not TBI plan
+ Plan Diag Rx Name              OK, saved prescription name matches current prescription
+ Plan Diag DIBH PIN              OK, saved Planning Diagram has no second PIN
+ IMRT Collimator              OK, no more than 1 IMRT beam has collimator zero
+ Plan Rx Link              OK, correct Rx is linked in Aria
+ Beam Names              OK
+ Setup Field MLC              OK, No Setup Field has MLC without proper label
+ DRR Names              OK
+ MLC leaves               OK
+ 180E               OK
+ Couch integral               OK
+ Plan Status              OK
+ Couch Lat Exceeded              OK
+ Setup Field Iso              OK, only 1 Isocenter
+ IMRT One Iso              OK, not multiple Isocenters
+ Target Contour              OK
+ MU Limit              OK
+ Body Contour              OK, Body contour is of type Body
+ DIBH ARC Length              OK, not a DIBH plan
+ Rx Dose Per Fx              OK, Prescription Dose Per Fraction does not violate allowed maximum limits
+ Triggered Markers              OK, Rx is not Triggered Imaging
+ Rx & Plan Name              OK
+ Collision Error              OK
+ Couch Long              OK, Couch Long <= 156
+ Primary RefPoint              OK
+ Breath Hold CT              OK, prescription and CT are both not breath hold
+ CTImageSlices              OK, number of image slices loaded matches the expected number
+ SetupFieldsGeometry              OK
+ Tolerance Table              OK
+ Ref Points Names              OK
+ RefPoint Dose              OK
+ Imager Vrt              OK
+ Dose Limits              OK
+ Plan Ref Point              OK, plan reference point A2_PTV_6840 found
+ Prescribed Percentage              OK
+ Blocks/Split Fields              OK
+ Bolus              OK
+ Time Stamp              OK
+ Intent Status              OK, Approved  2025-04-30 11AM Luke Peng
+ Intent Name              OK
+ Intent Multiple Plans              OK
+ Dynamic Wedge MU              OK
+ Y1  Y2 Symmetry              OK
+
+
+ ***************************** Program Execution Details ***************
+   --------------- INTENT DATA --------------
+   ClinicalConceptSer=   	375541
+   Intent Dose per Fr=   	180 to PTV_6840
+   Intent No of Fractions=	10
+   Intent Energy=        	6X
+   Intent Comment=       	Align to bone.  Bladder comfortably full.
+
+   --------------- PLAN DATA --------------
+   CourseSer=         	1320385    C1
+   PlanSetupId=       	A2_ProstBedCD
+   PlanUID=               	1.2.246.352.71.5.454944983115.4721270.20250424215425
+   CreationUserName=  	
+   Plan Created by=    	
+   CreationDate=      	Thu Apr 24 21:54:25 EDT 2025
+   Status=                	PlanApproval
+   StatusDate=        	Wed Apr 30 11:44:47 EDT 2025
+   StatusUserName=    	cs236
+   reviewedStatusStillValid=       	true
+   PredecessorPlanUID=	null
+   DosePerFraction=   	180.0
+   NoFractions=       	10
+   PlanSetupSer=      	4721270
+   RTPlanSer=   	4840694
+   MD=                        	Luke Peng
+   TreatmentOrientation=	HFS
+   RefPointNames=     	A2_PTV_6840, A_Pelvis, ISO, CalcPt
+   TimeAndDateOfProgramExecution=	Wed May 07 11:15:58 EDT 2025
+   
+---------------  FIELDS  ---------------
+   RadiationId=          	04 CW 
+   RadiationName=   	04 CW 181-179
+   RadiationSer=    	13660311
+   isSetupField         	false
+   Energy                   	6 X
+   Xcoll x Ycoll        	[10.9 x 11.0] 
+   Coll Xs Ys           	X1=-5.7,   X2=5.2,   Y1=-7.0,   Y2=4.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	DynMLCPlan
+   RadiationSer=      	13660311
+   MU=FieldDose*MUpGy=	0.9 * 401.8=378.1
+   TreatmentTime=     	1.84 [min]  
+   GantryRtn=         	181
+   DRRname=           	04
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	94.1
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	AsymmetryX&Y
+   RefImageSer=         	102482640
+
+   RadiationId=          	05 CCW 
+   RadiationName=   	05 CCW 179-181
+   RadiationSer=    	13660312
+   isSetupField         	false
+   Energy                   	6 X
+   Xcoll x Ycoll        	[10.5 x 10.5] 
+   Coll Xs Ys           	X1=-6.8,   X2=3.7,   Y1=-5.0,   Y2=5.5
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	DynMLCPlan
+   RadiationSer=      	13660312
+   MU=FieldDose*MUpGy=	0.9 * 401.8=345.1
+   TreatmentTime=     	1.84 [min]  
+   GantryRtn=         	179
+   DRRname=           	05
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	85.9
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	AsymmetryX&Y
+   RefImageSer=         	102482641
+
+   RadiationId=          	AP KV Setup 
+   RadiationName=   	AP KV Setup
+   RadiationSer=    	13660320
+   isSetupField         	true
+   Energy                   	6 X
+   Xcoll x Ycoll        	[20.0 x 20.0] 
+   Coll Xs Ys           	X1=-10.0,   X2=10.0,   Y1=-10.0,   Y2=10.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	null
+   RadiationSer=      	13660320
+   MU=FieldDose*MUpGy=	0 * 0=0
+   TreatmentTime=     	0.00 [min]  
+   GantryRtn=         	0
+   DRRname=           	AP KV Setup-DRR
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	0
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	Symmetry
+   RefImageSer=         	102482643
+
+   RadiationId=          	AP MV Setup 
+   RadiationName=   	AP MV Setup
+   RadiationSer=    	13660323
+   isSetupField         	true
+   Energy                   	6 X
+   Xcoll x Ycoll        	[20.0 x 20.0] 
+   Coll Xs Ys           	X1=-10.0,   X2=10.0,   Y1=-10.0,   Y2=10.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	null
+   RadiationSer=      	13660323
+   MU=FieldDose*MUpGy=	0 * 0=0
+   TreatmentTime=     	0.00 [min]  
+   GantryRtn=         	0
+   DRRname=           	AP MV Setup-DRR
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	0
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	Symmetry
+   RefImageSer=         	102482646
+
+   RadiationId=          	CBCT 
+   RadiationName=   	CBCT
+   RadiationSer=    	13660321
+   isSetupField         	true
+   Energy                   	6 X
+   Xcoll x Ycoll        	[20.0 x 20.0] 
+   Coll Xs Ys           	X1=-10.0,   X2=10.0,   Y1=-10.0,   Y2=10.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	null
+   RadiationSer=      	13660321
+   MU=FieldDose*MUpGy=	0 * 0=0
+   TreatmentTime=     	0.00 [min]  
+   GantryRtn=         	0
+   DRRname=           	CBCT-DRR
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	0
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	Symmetry
+   RefImageSer=         	102482644
+
+   RadiationId=          	PA KV Setup 
+   RadiationName=   	PA KV Setup
+   RadiationSer=    	13660322
+   isSetupField         	true
+   Energy                   	6 X
+   Xcoll x Ycoll        	[20.0 x 20.0] 
+   Coll Xs Ys           	X1=-10.0,   X2=10.0,   Y1=-10.0,   Y2=10.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	null
+   RadiationSer=      	13660322
+   MU=FieldDose*MUpGy=	0 * 0=0
+   TreatmentTime=     	0.00 [min]  
+   GantryRtn=         	180
+   DRRname=           	PA KV Setup-DRR
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	0
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	Symmetry
+   RefImageSer=         	102482645
+
+   RadiationId=          	R Lat KV Setup 
+   RadiationName=   	R Lat KV Setup
+   RadiationSer=    	13660319
+   isSetupField         	true
+   Energy                   	6 X
+   Xcoll x Ycoll        	[20.0 x 20.0] 
+   Coll Xs Ys           	X1=-10.0,   X2=10.0,   Y1=-10.0,   Y2=10.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	null
+   RadiationSer=      	13660319
+   MU=FieldDose*MUpGy=	0 * 0=0
+   TreatmentTime=     	0.00 [min]  
+   GantryRtn=         	270
+   DRRname=           	R Lat KV Set-DRR
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	0
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	Symmetry
+   RefImageSer=         	102482642
+
+   RadiationId=          	R Lat MV Setup 
+   RadiationName=   	R Lat MV Setup
+   RadiationSer=    	13660324
+   isSetupField         	true
+   Energy                   	6 X
+   Xcoll x Ycoll        	[20.0 x 20.0] 
+   Coll Xs Ys           	X1=-10.0,   X2=10.0,   Y1=-10.0,   Y2=10.0
+   COUCH                     	Vrt=-300, Lng=500 Lat=0
+   MLCType=            	null
+   RadiationSer=      	13660324
+   MU=FieldDose*MUpGy=	0 * 0=0
+   TreatmentTime=     	0.00 [min]  
+   GantryRtn=         	270
+   DRRname=           	R Lat MV Set-DRR
+   GantryRtnExt=      	NN
+   ToleranceId=       	01 Indexed
+   FieldDose=         	0
+   isDynamicWedge=    	false
+   IsoCenterPositionX=	-5.086488510392852
+   IsoCenterPositionY=	10.036815951493994
+   IsoCenterPositionZ=	-35.000000000000014
+   Has Bolus=         	false
+   CollMode=         	Symmetry
+   RefImageSer=         	102482647
+
+TBI Planning Diagram
+OK, not TBI plan
+
+Plan Diag Rx Name
+------------Planning Diagram Prescription Name------------
+OK, saved prescription name matches current prescription
+
+
+Plan Diag DIBH PIN
+------------Planning Diagram DIBH PINs------------
+OK, saved Planning Diagram has no second PIN
+
+
+IMRT Collimator
+OK, no more than 1 IMRT beam has collimator zero
+Plan Rx Link
+-----Plan/Prescription Appropriately Linked-----
+OK, correct Rx is linked in Aria
+
+
+Beam Names
+-----Verifying Beam names -----
+AP KV Setup, AP KV Setup field:  AP, Expected=AP, no gantry angle found
+AP MV Setup, AP MV Setup field:  AP, Expected=AP, no gantry angle found
+PA KV Setup, PA KV Setup field:  PA, Expected=PA, no gantry angle found
+R Lat KV Setup, R Lat KV Setup field:  RT LAT, Expected=RT LAT, no gantry angle found
+R Lat MV Setup, R Lat MV Setup field:  RT LAT, Expected=RT LAT, no gantry angle found
+OK
+
+Setup Field MLC
+-----Checking That No Setup Field without BOL in ID has MLCs Attached-----
+OK, No Setup Field has MLC without proper label
+
+
+DRR Names
+-----Verifying DRR names -----
+AP KV Setup, AP KV Setup, DRR=AP KV Setup-DRR  DRR:AP, Expected=AP
+AP MV Setup, AP MV Setup, DRR=AP MV Setup-DRR  DRR:AP, Expected=AP
+PA KV Setup, PA KV Setup, DRR=PA KV Setup-DRR  DRR:PA, Expected=PA
+R Lat KV Setup, R Lat KV Setup, DRR=R Lat KV Set-DRR  DRR:RT LAT, Expected=RT LAT
+R Lat MV Setup, R Lat MV Setup, DRR=R Lat MV Set-DRR  DRR:RT LAT, Expected=RT LAT
+OK
+
+MLC leaves
+-----Verifying MLC leaves-----
+OK
+
+
+180E 
+-----Verifying use of 180E-----
+[FieldName, GantryRtn, Couch Angle]= 
+GantryRtnClosestRight, GantryRtnClosestLeft=9999999.0, 9999999.0 
+The closest field angle to 180 from [right, left]= [99999.0, 999999.0] 
+Either all arcs or no 180 deg fields, therefore not checking.
+OK
+
+Couch integral 
+OK
+Couch Lat Exceeded
+------Isocenter Checks------
+OK
+
+Setup Field Iso
+------Setup Isocenter Checks------
+OK, only 1 Isocenter
+
+IMRT One Iso
+------IMRT ONE Isocenter Checks------
+OK, not multiple Isocenters
+
+Target Contour
+OK
+MU Limit
+
+-------Checking True Mu Limits---------
+
+Body Contour
+OK, Body contour is of type Body
+DIBH ARC Length
+-----Verifying Arc are <= 120 for DIBH Plans-----
+OK, not a DIBH plan
+
+Every Other Day
+---------Running Rx Frequency Check--------
+Frequency is not Every Other Day, so no check performed
+
+
+Rx Dose Per Fx
+-----Verifying Dose Per Fraction-----
+OK, Prescription Dose Per Fraction does not violate allowed maximum limits
+
+Triggered Markers
+--------Triggered Imaging Markers--------
+OK, Rx is not Triggered Imaging
+
+
+DIBH SPC
+-----Verifying DIBH Special Physics Consult-----
+Prescription is not breathhold, reminder skipped
+
+DeltaCouchShifts
+-----Verifying Couch Positions-----
+Not Ethos or no beams, check skipped
+
+BW06 Stereo
+-----Give Stereo Image Warning for BW plans-----
+Not a Boston Spine Stereo nor an Encompass Board Plan, so no warnings given
+Rx & Beam Name
+------Rx & Plan Name-------
+Rx and plan site code OK
+
+Collision Error
+
+-------Checking collisionCheck---------
+OK
+
+
+Couch Long
+
+-------Checking Couch Long collision---------
+OK, Couch Long <= 156
+
+Primary RefPoint
+-----Verifying Primary Ref Point-----
+Field dose 04 CW  0.9409734231424871 
+Field dose 05 CCW  0.859026576857513 
+Primary RefPointSer: 2081912
+OK 
+
+Breath Hold CT
+----Check CT Image for Breath Hold-----
+
+OK, prescription and CT are both not breath hold
+DIBH BODY_FB
+----Check BODY_FB for Boston DIBH-----
+
+CTImageSlices
+OK, number of image slices loaded matches the expected number
+Calculated = 244, Actual = 244
+
+
+SetupFieldsGeometry
+-----Verifying Setup Fields Geometry-----
+  AP KV Setup,    AP KV Setup,  0.00 
+  AP MV Setup,    AP MV Setup,  0.00 
+  CBCT,    CBCT,  0.00 
+  PA KV Setup,    PA KV Setup,  180.00 
+  R Lat KV Setup,    R Lat KV Setup,  270.00 
+  R Lat MV Setup,    R Lat MV Setup,  270.00 
+num of Delivery Beams=2       num of Setup Fields=6 
+OK - at least 2 setup fields at least 5 degrees apart 
+
+Tolerance Table
+-----Verifying Tolerance Table-----
+Plan: A2_ProstBedCD DosePerFraction: 180.0
+RTPlanSer= 4840694
+ 04 CW: 01 Indexed,  ToleranceSer=3
+ 05 CCW: 01 Indexed,  ToleranceSer=3
+ AP KV Setup: 01 Indexed,  ToleranceSer=3
+ AP MV Setup: 01 Indexed,  ToleranceSer=3
+ CBCT: 01 Indexed,  ToleranceSer=3
+ PA KV Setup: 01 Indexed,  ToleranceSer=3
+ R Lat KV Setup: 01 Indexed,  ToleranceSer=3
+ R Lat MV Setup: 01 Indexed,  ToleranceSer=3
+OK
+
+Ref Points Names
+-----Verifying Reference Point Names For Characters-----
+A2_PTV_6840
+A_Pelvis
+ISO
+CalcPt
+OK
+
+RefPoint Dose
+-----Verifying No Dose to Reference Point From Outside Course-----
+A2_PTV_6840
+A_Pelvis
+ISO
+CalcPt
+RefPoint Dose OK
+
+Imager Defined
+OK
+Dose Limits
+--------------- Verifying Dose Limits -------
+A1_PTV_5040 Planned: 5040.0, Dose limit: 5040.0 - OK
+A2_PTV_6840 Planned: 1800.0, Dose limit: 1800.0 - OK
+A_Pelvis Planned: 6840.000000000001, Dose limit: 6840.000000000001 - OK
+CalcPt Planned: 7011.579765359775, Dose limit: 7600.0 - OK
+ISO Planned: 7011.579765359775, Dose limit: 7600.0 - OK
+OK
+
+Plan Ref Point
+------ Plan-Specific Reference Point -----
+OK, plan reference point A2_PTV_6840 found
+
+
+Prescribed Percentage
+-----Verifying Prescribed Percentage -----
+PrescribedPercentage=1.0 
+OK 
+
+Blocks/Split Fields
+-----Verifying Split Fields-----
+nullOK 
+
+Bolus
+-----Verifying Presence of Bolus in Intent vs fields -----
+OK, No Bolus in the intent or in fields
+
+Time Stamp
+----------TimeStampCheck----------
+OK
+
+Intent Status
+-----Verifying use of Intent MD Review status-----
+OK, Approved  2025-04-30 11AM Luke Peng
+
+Intent Name
+-----Verifying use of Intent MD Review status-----
+OK
+
+Intent
+-----Verifying use of Intent Values-----
+OK
+
+Dynamic Wedge MU
+-----Verifying DynamicWedgeMU -----
+OK, no dynamic wedges used
+
+Y1 Y2 Symmetry
+----- Verifying Y1 Y2 Collimator -----
+Skipping field 04 CW, no dynamic wedge
+Skipping field 05 CCW, no dynamic wedge
+OK
+
+Open Sessions
+----------Previous Open Sessions---------
+OK
+
+Concurrent Tx
+---------Concurrent Treatment Courses--------
+OK
+
+Plan Sequence
+--------Verifying Plan Scheduling--------
+OK, Scheduled Correctly
+
+Cone Down Plan
+--------Checking First Course/Cone Down--------
+[CD: A2_ProstBedCD, fr.left:10] FC: [A1_Pelvis, fr.left:25] 
+
+Machine
+ ---------  Verification of Patient Scheduled on the correct machine  ------------- 
+MachineIdFromSchedule=	MLFRD15B
+MachineIdFromPlan=	MLFRD15B
+Imaging-only appt=	null
+ScheduledStartTime=	Wed May 07 08:00:00 EDT 2025
+OK, scheduled at 08:00AM  Wednesday  05/07/2025  on MLFRD15B
+Note: Plan has at least 1 fraction scheduled Not on Planned Machine
+
+
+JawsOutsideMLC
+----------Jaws Outside MLC for Subfields----------
+04 CW: biggestRetractionOfMLCsA = 57.1, X2 = 52.099998474121094; biggestRetractionOfMLCsB = -62.4, X1 = -57.400001525878906
+05 CCW: biggestRetractionOfMLCsA = 42.0, X2 = 37.0; biggestRetractionOfMLCsB = -73.0, X1 = -68.0
+OK
+
+
+5MU Limit
+------Verification of  Min 5MU per beam  -----
+[04 CW, MU=MUpGy*Beamdose=401.8 + 0.9=378.1MU ]
+[05 CCW, MU=MUpGy*Beamdose=401.8 + 0.9=345.1MU ]
+ OK
+
+SSD to table
+------Verification of SSD set To Table Top Verification  -----
+[04 CW,  GtryAng:181 SSD:897.8 ]
+[05 CCW,  GtryAng:179 SSD:897.3 ]
+ OK
+
+Same Machine
+-----Check that all unfinished, treatment approved plans in same course are on same machine-----
+OK, all treatment approved plans use the same machine
+
+Same Course
+-----Check that all active, unfinished, approved plans that use the same machine are in the same Course-----
+OK, no other Active Course with open sessions use the same machine
+
+Couch Vrt
+-----Verifying Couch VRT-----
+OK, Couch Vrt is OK for VMAT plan
+
+Previous Tx
+-----Give Plan Sum Reminder if not C1-----
+Not a clinical course other than C1, no message given/n
+Previous Tx
+-----Check Course Id is Capitalized-----
+OK, clinical course starts with capital C
+OK, clinical course starts with capital C/n
+Field ID
+-----Verifying Field ID Names -----
+
+OK
+
+BOL Field ID
+-----Verifying Bolus in Field ID -----
+Gantry Rotation Direction OK 
+
+CouchAngleInBeamName
+----------Couch Angle Off Zero In Beam Name----------
+OK
+OncologistReview
+OK, plan was last reviewed by a radiation oncologist.
+Couch Structure
+-------------------Couch Structure Check-------------------
+OK, no couch support structures exist for MLFRD15B
+
+Prostate Contours
+-----Give Bladder and Rectum Warning for Prostate plans-----
+Not a Boston Prostate Plan, so no warning given
+Rx Site Spine
+-----Give Vertebrae Reminder for Spine plans-----
+This is not a spine plan, so no warning given
+Boston Prone Breast
+-----Give Prone Breast Warnings for Boston plans-----
+Not a Boston Prone Breast Plan, so no warnings given
+SCL MED SETUP
+-----Give Medial Setup Field Reminder for SCL/AX plans-----
+Not a SCL Breast Plan, so no warnings given
+SRS+SRT
+-----Give Stereo Image Warning for BW06A plans-----
+Not a Boston BW06 Stereo Plan, so no warnings given
+Boston Stereo PTV
+-----correct PTV Boston Stereo Warning for BW plans-----
+Not a Boston Stereo Plan, so no warnings given
+
+Boston Intent
+-----Give Intent reminders for Boston plans-----
+Not a Boston Non-MRI Plan, so no Intent Reminders given
+Triggered Imaging
+-----Give Triggered Imaging Reminder for all plans-----
+Rx Imaging Settings does not contain Triggered kV Imaging, so no warning given
+Electron BEV
+-----Give Bev reminders for Boston Electron plans-----
+Not a Boston Electron Plan, so no Bev Reminders given
+Ethos Mobius
+-----Give Mobius reminders for Boston Ethos plans-----
+Not a Boston Ethos Plan, so no Mobius Reminders given
+Network Calc Grid
+OK, Network plan on a 2.5 mm or less calc grid
+
+
+Rx Technique
+OK
+
+Rx Frequency
+-------Rx Frequency-------
+OK
+
+QA Scheduled
+----------------------    IMRT QA on schedule verification -------------   
+MLFRD15B  -Machine from schedule 
+MLFRD15B  -Machine plan developed for 
+null  -QA machine and QAMachineResourceSer=-1
+Wed May 07 08:00:00 EDT 2025  -Scheduled for treatment date and time
+true  -was Due Date Set?
+true -is IMRT QA Ready?
+true -is Machine Correct
+Wed Jun 11 23:10:00 EDT 2025  -QA due Date Time
+false  -was QA plan Created?
+-1  -QA Plan Setup Ser
+null  -QA Plan Setup ID
+true  -has Dynamic MLC field?
+false  -Was QA plan executed?
+null  -QA Execution Treatment Time
+true  -Was QA task completed?
+null  -QA due Date Note
+Is Plan SBRT: false
+Is Outreach: true
+Plan type=IMRT
+OK, IMRT QA scheduled due Wednesday  06/11/2025
+Note: null
+OK, QA task completed on 2025-05-01
+QA not yet approved
+
+BolusAndBlockId
+--------------Checking for Block/Bolus Id Length, BolusId Thickness -----------
+OK, names not longer than 14 characters
+OK, bolus thickness in bolus ID correct
+
+Illegal Characters
+--------------Checking for Forbidden Characters-----------
+OK
+
+Two Isocenters
+---------------------Two Isocenter Verificaton ----------------------
+OK, only one Iso
+
+ISOsTooClose
+OK
+ElectronConeAngle
+---------Electron Cone Angle-----------
+ConeFall
+OK
+
+BlockIds
+---------Unique Blocks for Field Settings-----------
+OK
+
+Jaws Inside Limits
+---------------------JawsInsideLimitsVerification ----------------------
+Jaws outside limits: OK
+
+ArcXJaw
+---------------------xJawVmatCheck----------------------
+Note: X Jaw open wider than 15cm: OK
+
+Jaw Tracking
+OK
+Arc Beam Check
+-----------------Arc Beam Check-----------------
+OK, all arc checks passed
+
+
+IMRT Intent
+-------Verifying Dynamic MLC Use With IMRT/ARC Intents-------
+Rx technique: IMRT
+OK, all treatment beams have MLC
+
+
+Chart Images
+ ---------------------Chart Images ---------------------- 
+OK - images saved and currently valid
+
+
+DVH Image
+ ---------------------DVH Images ---------------------- 
+OK - DVH image not required
+
+Chart DVHs
+ ---------------------Chart DVHs---------------------- 
+OK - sum plan "Plan Sum" containing this plan has valid saved DVHs
+
+
+Documents
+ ---------------------Documents---------------------- 
+OK - Planning Diagram and Calculation Report both saved
+
+
+Metric Doses
+ --------------Metric Document Doses Check--------------- 
+OK - all connected metric documents have matching plan and prescription doses
+
+Metric Document
+ ----------------Metrics Document Check----------------- 
+OK - sum plan "Plan Sum" containing this plan is connected to a metrics document
+
+Dose Rate
+-----Verifying Dose Rate-----
+Machine: MLFRD15B
+Field: 04 CW,  Expected Dose Rate: 600 Planned: 600  Photons
+Field: 05 CCW,  Expected Dose Rate: 600 Planned: 600  Photons
+OK, 600,  Machine: MLFRD15B  Photons
+
+Delivery Time
+-----Verifying Delivery Time -----
+ARC: 04 CW Time 1.24, Min time 1.84, MU time 1.26, Compare to set Tx Time = 1.84
+ARC: 05 CCW Time 1.24, Min time 1.84, MU time 1.15, Compare to set Tx Time = 1.84
+OK 
+
+DIBH Field Naming
+-----Verifying DIBH Field Naming -----
+OK, no DIBH fields
+
+Gated Plan/Rx
+-----Verifying Plan Gating-----
+OK, Plan and Rx are both not for Gating.
+
+
+CouchKick
+OK, no beams have couch kicks
+Couch Positions
+-----Verifying Couch Positions-----
+Couch Lat, Lng, and Vrt are all defined for all fields
+OK
+
+OnePlanPerQaNote
+OK
+
+Sim Document Link
+-----Checking for linked sim document-----
+OK, plan linked to simulation document
+
+
+Sim Document
+-----Checking Sim Document Completeness-----
+OK, simulation document complete
+
+
+AVATAR
+
+------AVATAR Plus Non-Coplanar Field Check------
+OK, AVATAR either not used for sim or AVATAR usage unknown
+
+
+CT Exam Number
+-----Checking Sim Document CT Exam Number-----
+OK, planning CT exam number matches SimDocument
+
+
+SimDoc Shift
+-----Plan Isocenter Change Check-----
+OK, plan isocenter unchanged
+
+
+SimDoc Indexed
+-----Checking Sim Document Indexing-----
+OK, sim document indexing and field tolerances match
+
+
+SimDoc Laterality
+-----Checking SimDocument Laterality-----
+OK, sim document laterality matches plan and rx
+
+
+Sim Doc Agreement
+-----Checking sim document agreement with plan/prescription bolus and DIBH----
+OK, patient not scanned with bolus
+OK, Sim Document and plan gating agree----Check CT Image for AVE-----
+OK, SimDoc modality and plan modality are both photon
+
+
+SimDoc Immobilization
+-----Checking Sim Document Immobilization-----
+No immobilization devices found that require a note
+
+
+Outreach SBRT FOV
+----Check SBRT Outreach for FOV-----
+
+SimDocCollision
+OK
+Orientation
+OK, Plan orientation and CT Image orientation match
+Concurrent Plans
+------Concurrent Plans------
+OK, no concurrently-scheduled plans
+
+
+MRL Summary Doc
+-----MR-Linac Treatment Plan Summary Document-----
+OK, not MR-linac plan, check skipped
+
+
+Rx Note
+------Prescription Non-Empty Note------
+Note: Non-empty prescription note.  Check for planning instructions.
+
+
+DF10A Posterior
+OK, not a DF10A Arc plan
+Below Horizon
+------ Below-the-Horizon Beam Check -----
+OK, all beams above the horizon
+
+
+HyperArc Automation
+-------HyperArc Automation-------
+OK, HyperArc automation is not used for this plan
+
+
+Rx Template Frc
+-----------Prescription Template Fractions Check-----------
+Prescription technique: IMRT
+Prescription number of fractions: 10
+OK, prescription not stereo, template fractions not checked
+
+
+Planning Charges
+------Planning Charges------
+Secondary Calc save date: 2025-05-06
+Planning Diagram creation date: 2025-05-06
+Saved image print date(s): 2025-05-06
+OK, all saved documents have matching planning charges
+
+
+Document Dates
+------Document Dates------
+OK, save/creation dates match for all documentation
+
+
+Unmatched Charges
+------Unmatched Charges------
+Allowed charge date range: 2025-04-25 to 2025-05-11
+OK, all planning charge dates match up with plan documentation
+
+
+Calc Charges
+------Calc Charges------
+Calc charges found: 2
+Calc charges expected: 2
+OK, the expected number of 77300 charges were billed on 5/6/2025
+
+
+Device Charges
+------Device Charges------
+77332 charges: 0
+77334 charges: 0
+77338 charges: 1
+OK, device charge quantities billed 5/6/2025 match expected values
+
+
+Cone Down Charge
+------Cone Down Charge------
+Verified plan A2_ProstBedCD charge date range: 2025-05-06 - 2025-05-06
+Previous course A1_Pelvis charge date range: 2025-04-30 - 2025-04-30
+OK, previous course charge date(s) are before current plan charge date(s)
+
+
+Planning Issues
+-------Planning Issues Tracking-------
+OK, planning issues tracking entry saved for course C1
+
+

@@ -1,0 +1,43 @@
+---
+description: rules for project
+globs: .cs
+alwaysApply: false
+---
+# PROJECT OVERVIEW
+
+- Build a treatment planning assistant GUI interface to run scripts for treatment planning, the gui interface will execute scripts for each step of planning, when script finish executing, user is prompt a summary of what the script did in the current step, instructs user to check the work that was performed in the form of a checklist for user to check off and shows user the tasks in the next step/script in the treatment planning workflow process. The GUI will have a status for the script, info on what each script does for each step, execution log for error handling so user can see what's going on.
+
+# PERSONALITY
+
+-senior programmer/engineer helping
+
+# TECH STACK
+
+C# 
+.net
+
+# ERROR FIXING PROCESS
+
+- explain the error fixing process
+
+# BUILDING PROCESS
+
+# OUR .env variables
+
+# GITHUB PUSH PROCESS
+
+# IMPORTANT
+
+- start by writing 3 reasoning paragraphs analysing what the error might be. DO NOT JUMP TO CONCLUSIONS
+- you should start the reasoning paragraph with lots of uncertainty, and slowly gain confidence as you think about the item more
+- DO NOT STOP WORKING until error is fixed
+- proceed like a senior developer
+
+
+# COMMENTS
+
+- make sure to ALWAYS include comments in your code
+- write detials on what the code is doing
+- do not delete comments unless they are no longer needed
+
+# Your rule content

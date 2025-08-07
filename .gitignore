@@ -1,0 +1,77 @@
+# Eclipse Plan Check Script - Git Ignore File
+
+# Visual Studio / C# Build Artifacts
+bin/
+obj/
+*.exe
+*.dll
+*.pdb
+*.cache
+*.suo
+*.user
+*.sln.docstates
+.vs/
+
+# Eclipse Script Compiled Files
+*.esapi
+
+# Windows System Files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary Files
+*.tmp
+*.temp
+*~
+
+# Log Files
+*.log
+
+# Patient Data (NEVER commit patient data)
+*patient*
+*PATIENT*
+*Patient*
+*.dcm
+*.DICOM
+*.dicom
+
+# PHI Protection - Common Eclipse folders
+# (Add patterns specific to your institution)
+*PatientData*
+*ARIA*
+*Patient*
+*Clinical*
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Backup Files
+*.bak
+*.backup
+*~
+
+# Eclipse System Files (if accidentally copied)
+vision.exe
+EclipseApp.exe
+
+# Documentation Build Files
+docs/_build/
+site/
+
+# Test Results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml

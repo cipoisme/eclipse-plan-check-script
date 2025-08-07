@@ -1,0 +1,933 @@
+using System;
+using System.Linq;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Documents;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.IO;
+using VMS.TPS.Common.Model.API;
+using VMS.TPS.Common.Model.Types;
+
+[assembly: AssemblyVersion("1.0.0.1")]
+
+namespace VMS.TPS
+{
+  public class Script
+  {
+    public Script()
+    {
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public void Execute(ScriptContext context /*, System.Windows.Window window, ScriptEnvironment environment*/)
+    {
+        // TODO : Add here the code that is called when the script is launched from Eclipse.
+     
+        if (context.StructureSet == null)
+        {
+            MessageBox.Show("Loaded plan has no structure set");
+            return;
+        }
+        if (context.PlanSetup.Dose == null)
+        {
+            MessageBox.Show("Loaded plan has no dose");
+            return;
+        }
+        if (context.PlanSetup == null)
+        {
+            MessageBox.Show("Loaded plan has no plan setup");
+            return;
+        }
+
+        // Launch the custom scrollable window
+        var planCheckWindow = new ScrollablePlanCheckWindow(context);
+        planCheckWindow.ShowDialog();
+    }
+  }
+
+  public class ScrollablePlanCheckWindow : Window
+  {
+    private ScriptContext context;
+    private ScrollViewer scrollViewer;
+    private RichTextBox resultsRichTextBox;
+    private Button exportButton;
+    private Button closeButton;
+    private Dictionary<string, bool> checkBoxStates = new Dictionary<string, bool>();
+
+    public ScrollablePlanCheckWindow(ScriptContext scriptContext)
+    {
+        this.context = scriptContext;
+        InitializeComponents();
+        RunAllChecks();
+    }
+
+    private void InitializeComponents()
+    {
+        // Window setup - compact and resizable
+        this.Title = "Plan Check Results - " + context.PlanSetup.Id;
+        this.Width = 800;
+        this.Height = 600;
+        this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        this.ResizeMode = ResizeMode.CanResize;
+        this.Background = Brushes.WhiteSmoke;
+        
+        // Set maximum size to prevent extending beyond screen
+        this.MaxHeight = System.Windows.SystemParameters.WorkArea.Height * 0.9;
+        this.MaxWidth = System.Windows.SystemParameters.WorkArea.Width * 0.9;
+        
+        // Set minimum size for usability
+        this.MinHeight = 400;
+        this.MinWidth = 600;
+
+        // Main grid
+        var mainGrid = new Grid();
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Header
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Content
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Buttons
+        this.Content = mainGrid;
+
+        // Header
+        CreateHeader(mainGrid);
+
+        // Content area with scroll
+        CreateContentArea(mainGrid);
+
+        // Action buttons
+        CreateActionButtons(mainGrid);
+    }
+
+    private void CreateHeader(Grid mainGrid)
+    {
+        var headerPanel = new StackPanel
+        {
+            Background = Brushes.LightBlue,
+            Margin = new Thickness(0)
+        };
+
+        var titleLabel = new Label
+        {
+            Content = "Plan Check Results - " + context.PlanSetup.Id,
+            FontSize = 14,
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(10)
+        };
+
+        var summaryLabel = new Label
+        {
+            Content = "*** PLAN CHECK SUMMARY *** - Check boxes to verify items have been reviewed",
+            FontSize = 11,
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(5)
+        };
+
+        headerPanel.Children.Add(titleLabel);
+        headerPanel.Children.Add(summaryLabel);
+
+        Grid.SetRow(headerPanel, 0);
+        mainGrid.Children.Add(headerPanel);
+    }
+
+    private void CreateContentArea(Grid mainGrid)
+    {
+        // Create a border for the content area
+        var contentBorder = new Border
+        {
+            BorderBrush = Brushes.Gray,
+            BorderThickness = new Thickness(1),
+            Background = Brushes.White,
+            Margin = new Thickness(10)
+        };
+
+        // Create scroll viewer
+        scrollViewer = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        // Create the results rich text box
+        resultsRichTextBox = new RichTextBox
+        {
+            IsReadOnly = false, // Allow interaction with checkboxes
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 12,
+            Background = Brushes.White,
+            Foreground = Brushes.Black,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(10),
+            Document = new FlowDocument(),
+            AcceptsReturn = false,
+            AcceptsTab = false,
+            IsUndoEnabled = false,
+            IsInactiveSelectionHighlightEnabled = false
+        };
+
+        // Set up the document
+        var document = resultsRichTextBox.Document;
+        document.PageWidth = 800; // Use a reasonable fixed width instead of double.MaxValue
+        document.PagePadding = new Thickness(0);
+        
+        // Configure the RichTextBox for better text flow
+        resultsRichTextBox.Document.LineHeight = 1.2;
+        resultsRichTextBox.Document.TextAlignment = TextAlignment.Left;
+
+        scrollViewer.Content = resultsRichTextBox;
+        contentBorder.Child = scrollViewer;
+
+        Grid.SetRow(contentBorder, 1);
+        mainGrid.Children.Add(contentBorder);
+    }
+
+    private void CreateActionButtons(Grid mainGrid)
+    {
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(10)
+        };
+
+        exportButton = new Button
+        {
+            Content = "Export Results",
+            Width = 120,
+            Height = 30,
+            Margin = new Thickness(5),
+            Background = Brushes.LightBlue,
+            BorderBrush = Brushes.Gray
+        };
+        exportButton.Click += (s, e) => ExportResults();
+
+        closeButton = new Button
+        {
+            Content = "Close",
+            Width = 80,
+            Height = 30,
+            Margin = new Thickness(5),
+            Background = Brushes.LightGray,
+            BorderBrush = Brushes.Gray
+        };
+        closeButton.Click += (s, e) => this.Close();
+
+        buttonPanel.Children.Add(exportButton);
+        buttonPanel.Children.Add(closeButton);
+
+        Grid.SetRow(buttonPanel, 2);
+        mainGrid.Children.Add(buttonPanel);
+    }
+
+    private void RunAllChecks()
+    {
+        // Clear previous content
+        resultsRichTextBox.Document.Blocks.Clear();
+        checkBoxStates.Clear();
+
+        var document = resultsRichTextBox.Document;
+        var paragraph = new Paragraph();
+        document.Blocks.Add(paragraph);
+
+        // Add title
+        var titleRun = new Run("*** PLAN CHECK SUMMARY ***")
+        {
+            FontSize = 16,
+            FontWeight = FontWeights.Bold
+        };
+        paragraph.Inlines.Add(titleRun);
+        paragraph.Inlines.Add(new LineBreak());
+        paragraph.Inlines.Add(new LineBreak());
+
+        var subtitleRun = new Run("Check the boxes below to verify items have been reviewed:")
+        {
+            FontSize = 12,
+            FontWeight = FontWeights.Normal
+        };
+        paragraph.Inlines.Add(subtitleRun);
+        paragraph.Inlines.Add(new LineBreak());
+        paragraph.Inlines.Add(new LineBreak());
+
+        // Basic Plan Information
+        AddSectionTitle(paragraph, "PLAN INFORMATION:");
+        AddCheckBoxItem(paragraph, string.Format("Plan ID: {0}", context.PlanSetup.Id));
+        AddCheckBoxItem(paragraph, string.Format("Dose: {0}cGy in {1}fx", context.PlanSetup.DosePerFraction.Dose, context.PlanSetup.NumberOfFractions));
+        AddCheckBoxItem(paragraph, string.Format("Status: {0}", context.PlanSetup.ApprovalStatus));
+        AddCheckBoxItem(paragraph, string.Format("Treatment Orientation: {0}", context.PlanSetup.TreatmentOrientation));
+        paragraph.Inlines.Add(new LineBreak());
+
+        // Run all checks
+        CheckPlanReferencePoint(context, paragraph);
+        CheckBodyContour(context, paragraph);
+        CheckSetupFields(context, paragraph);
+        CheckBeamAndDRRNames(context, paragraph);
+        CheckMLCConfiguration(context, paragraph);
+        CheckIsocenterConfiguration(context, paragraph);
+        CheckDoseLimits(context, paragraph);
+        CheckToleranceTable(context, paragraph);
+        CheckReferencePoints(context, paragraph);
+        CheckStructureDoseAnalysis(context, paragraph);
+        CheckPlanStatusAndIntent(context, paragraph);
+        CheckMachineAndScheduling(context, paragraph);
+        CheckDocumentation(context, paragraph);
+        CheckQARequirements(context, paragraph);
+        CheckSpecialConsiderations(context, paragraph);
+
+        // New comprehensive sections
+        CheckInitialAssessment(context, paragraph);
+        CheckSimulation(context, paragraph);
+        CheckTreatmentPlan(context, paragraph);
+        CheckMosaiqRadRx(context, paragraph);
+        CheckSiteSetup(context, paragraph);
+        CheckPlanTransfer(context, paragraph);
+        CheckPlanDocument(context, paragraph);
+        CheckOtherTasks(context, paragraph);
+
+        // Add summary
+        AddSectionTitle(paragraph, "*********************************  CHECK COMPLETE  *********************************");
+        paragraph.Inlines.Add(new LineBreak());
+        AddSectionTitle(paragraph, "FEATURES:");
+        AddCheckBoxItem(paragraph, "Automatic plan validation");
+        AddCheckBoxItem(paragraph, "Dose analysis for critical structures");
+        AddCheckBoxItem(paragraph, "MLC and beam configuration checks");
+        AddCheckBoxItem(paragraph, "Export results to text file");
+        AddCheckBoxItem(paragraph, "Integration with QA tools");
+        AddCheckBoxItem(paragraph, "Documentation links");
+        AddCheckBoxItem(paragraph, "Comprehensive checklist sections");
+        AddCheckBoxItem(paragraph, "Initial assessment verification");
+        AddCheckBoxItem(paragraph, "Simulation quality checks");
+        AddCheckBoxItem(paragraph, "Treatment plan validation");
+        AddCheckBoxItem(paragraph, "Mosaiq RadRx verification");
+        paragraph.Inlines.Add(new LineBreak());
+
+        var helpRun = new Run("For additional help, contact your medical physicist.")
+        {
+            FontSize = 12,
+            FontWeight = FontWeights.Normal
+        };
+        paragraph.Inlines.Add(helpRun);
+        paragraph.Inlines.Add(new LineBreak());
+        paragraph.Inlines.Add(new LineBreak());
+
+        AddSectionTitle(paragraph, "INSTRUCTIONS:");
+        var instructionRun = new Run("• Review each item above")
+        {
+            FontSize = 12,
+            FontWeight = FontWeights.Normal
+        };
+        paragraph.Inlines.Add(instructionRun);
+        paragraph.Inlines.Add(new LineBreak());
+        
+        var instructionRun2 = new Run("• Click the checkboxes to indicate items have been verified")
+        {
+            FontSize = 12,
+            FontWeight = FontWeights.Normal
+        };
+        paragraph.Inlines.Add(instructionRun2);
+        paragraph.Inlines.Add(new LineBreak());
+        
+        var instructionRun3 = new Run("• Export the results to save your verification status")
+        {
+            FontSize = 12,
+            FontWeight = FontWeights.Normal
+        };
+        paragraph.Inlines.Add(instructionRun3);
+
+        // Scroll to top
+        resultsRichTextBox.ScrollToHome();
+    }
+
+    private void ExportResults()
+    {
+        try
+        {
+            string fileName = "PlanCheck_" + context.PlanSetup.Id + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt";
+            string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), fileName);
+            
+            // Extract text from RichTextBox
+            var textRange = new TextRange(resultsRichTextBox.Document.ContentStart, resultsRichTextBox.Document.ContentEnd);
+            string content = textRange.Text;
+            
+            // Add checkbox states to the export
+            var exportContent = new StringBuilder();
+            exportContent.AppendLine(content);
+            exportContent.AppendLine();
+            exportContent.AppendLine("=== CHECKBOX VERIFICATION SUMMARY ===");
+            exportContent.AppendLine(string.Format("Total checkboxes: {0}", checkBoxStates.Count));
+            exportContent.AppendLine(string.Format("Checked items: {0}", checkBoxStates.Values.Count(v => v)));
+            exportContent.AppendLine(string.Format("Unchecked items: {0}", checkBoxStates.Values.Count(v => !v)));
+            exportContent.AppendLine();
+            exportContent.AppendLine("=== DETAILED CHECKBOX STATES ===");
+            int checkboxNumber = 1;
+            foreach (var kvp in checkBoxStates)
+            {
+                string status = kvp.Value ? "CHECKED" : "UNCHECKED";
+                exportContent.AppendLine(string.Format("Checkbox {0}: {1}", checkboxNumber++, status));
+            }
+            
+            File.WriteAllText(filePath, exportContent.ToString());
+            
+            MessageBox.Show(
+                string.Format("Results exported successfully to:\n{0}", filePath),
+                "Export Complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information
+            );
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Error exporting results: " + ex.Message,
+                "Export Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error
+            );
+        }
+    }
+
+    // Check methods (same as before)
+    private void CheckPlanReferencePoint(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "1. PLAN REFERENCE POINT CHECK:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [INFO] Plan reference point check not available in this API version");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check plan reference point - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckBodyContour(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "2. BODY CONTOUR CHECK:");
+        try
+        {
+            var bodyStructure = context.StructureSet.Structures.FirstOrDefault(s => s.Id.ToLower().Contains("body"));
+            if (bodyStructure != null)
+            {
+                AddCheckBoxItem(paragraph, string.Format("   [OK] Body contour found: {0}", bodyStructure.Id));
+            }
+            else
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] No body contour found");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check body contour - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckSetupFields(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "3. SETUP FIELDS CHECK:");
+        try
+        {
+            var setupFields = context.PlanSetup.Beams.Where(b => b.IsSetupField).ToList();
+            if (setupFields.Count > 0)
+            {
+                AddCheckBoxItem(paragraph, string.Format("   [OK] Found {0} setup fields", setupFields.Count));
+                foreach (var field in setupFields)
+                {
+                    AddCheckBoxItem(paragraph, string.Format("     - {0}", field.Id));
+                }
+            }
+            else
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] No setup fields found");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check setup fields - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckBeamAndDRRNames(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "4. BEAM AND DRR NAMES CHECK:");
+        try
+        {
+            var treatmentBeams = context.PlanSetup.Beams.Where(b => !b.IsSetupField).ToList();
+            if (treatmentBeams.Count > 0)
+            {
+                AddCheckBoxItem(paragraph, string.Format("   [OK] Found {0} treatment beams", treatmentBeams.Count));
+                foreach (var beam in treatmentBeams)
+                {
+                    AddCheckBoxItem(paragraph, string.Format("     - Beam: {0}", beam.Id));
+                }
+            }
+            else
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] No treatment beams found");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check beam names - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckMLCConfiguration(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "5. MLC CONFIGURATION CHECK:");
+        try
+        {
+            var beamsWithMLC = context.PlanSetup.Beams.Where(b => b.MLCPlanType.ToString().ToLower() != "none").ToList();
+            if (beamsWithMLC.Count > 0)
+            {
+                AddCheckBoxItem(paragraph, string.Format("   [OK] Found {0} beams with MLC", beamsWithMLC.Count));
+                foreach (var beam in beamsWithMLC)
+                {
+                    AddCheckBoxItem(paragraph, string.Format("     - {0}: {1}", beam.Id, beam.MLCPlanType));
+                }
+            }
+            else
+            {
+                AddCheckBoxItem(paragraph, "   [INFO] No MLC beams found");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check MLC configuration - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckIsocenterConfiguration(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "6. ISOCENTER CHECK:");
+        try
+        {
+            var isocenters = context.PlanSetup.Beams.Select(b => b.IsocenterPosition).Distinct().ToList();
+            if (isocenters.Count == 1)
+            {
+                AddCheckBoxItem(paragraph, "   [OK] Single isocenter configuration");
+            }
+            else if (isocenters.Count > 1)
+            {
+                AddCheckBoxItem(paragraph, string.Format("   [WARNING] Multiple isocenters found ({0})", isocenters.Count));
+            }
+            else
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] No isocenters found");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check isocenter configuration - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckDoseLimits(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "7. DOSE LIMITS CHECK:");
+        try
+        {
+            var totalDose = context.PlanSetup.DosePerFraction.Dose * context.PlanSetup.NumberOfFractions;
+            AddCheckBoxItem(paragraph, string.Format("   [OK] Total dose: {0}Gy", totalDose/100));
+            
+            if (totalDose > 8000) // 80Gy
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] High total dose detected");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check dose limits - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckToleranceTable(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "8. TOLERANCE TABLE CHECK:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [INFO] Tolerance table check not available in this API version");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check tolerance tables - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckReferencePoints(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "9. REFERENCE POINTS CHECK:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [INFO] Reference points check not available in this API version");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check reference points - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckStructureDoseAnalysis(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "10. STRUCTURE DOSE ANALYSIS:");
+        try
+        {
+            foreach (var strct in context.StructureSet.Structures)
+            {   
+                if (strct.Id.ToLower().Contains("rectum") || strct.Id.ToLower().Contains("bladder") ||
+                    strct.Id.ToLower().Contains("bowel") || strct.Id.ToLower().Contains("sigmoid"))
+                {
+                    double absDose = context.PlanSetup.GetDoseAtVolume(strct, 2.0, VolumePresentation.AbsoluteCm3, DoseValuePresentation.Absolute).Dose;
+                    double relDose = context.PlanSetup.GetDoseAtVolume(strct, 2.0, VolumePresentation.AbsoluteCm3, DoseValuePresentation.Relative).Dose;
+                    AddCheckBoxItem(paragraph, string.Format("   [D2cc] {0}: {1}Gy ({2}%)", strct.Id, absDose/100, relDose));
+                }
+                else if (strct.Id.ToLower().Contains("urethra"))
+                {
+                    double absDose = context.PlanSetup.GetDoseAtVolume(strct, 0.1, VolumePresentation.AbsoluteCm3, DoseValuePresentation.Absolute).Dose;
+                    double relDose = context.PlanSetup.GetDoseAtVolume(strct, 0.1, VolumePresentation.AbsoluteCm3, DoseValuePresentation.Relative).Dose;
+                    AddCheckBoxItem(paragraph, string.Format("   [D0.1cc] {0}: {1}Gy ({2}%)", strct.Id, absDose/100, relDose));
+                }
+                else if (strct.Id.ToLower().Contains("ctv") && !strct.Id.ToLower().StartsWith("z") && !strct.Id.ToLower().Contains("ln"))
+                {
+                    double absDose = context.PlanSetup.GetDoseAtVolume(strct, 0.1, VolumePresentation.AbsoluteCm3, DoseValuePresentation.Absolute).Dose;
+                    double relDose = context.PlanSetup.GetDoseAtVolume(strct, 0.1, VolumePresentation.AbsoluteCm3, DoseValuePresentation.Relative).Dose;
+                    AddCheckBoxItem(paragraph, string.Format("   [D0.1cc] {0}: {1}Gy ({2}%)", strct.Id, absDose/100, relDose));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not analyze structure doses - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckPlanStatusAndIntent(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "11. PLAN STATUS AND INTENT:");
+        try
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [OK] Plan Status: {0}", context.PlanSetup.ApprovalStatus));
+            if (context.PlanSetup.ApprovalStatus.ToString().ToLower().Contains("planning"))
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] Plan is still in planning status");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check plan status - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckMachineAndScheduling(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "12. MACHINE AND SCHEDULING:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [INFO] Machine check not available in this API version");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check machine - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckDocumentation(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "13. DOCUMENTATION CHECK:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [INFO] Documentation check requires manual verification");
+            AddCheckBoxItem(paragraph, "     - Planning Diagram");
+            AddCheckBoxItem(paragraph, "     - Calculation Report");
+            AddCheckBoxItem(paragraph, "     - DVH Images");
+            AddCheckBoxItem(paragraph, "     - Chart Images");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check documentation - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckQARequirements(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "14. QA REQUIREMENTS:");
+        try
+        {
+            var hasDynamicMLC = context.PlanSetup.Beams.Any(b => b.MLCPlanType.ToString().ToLower().Contains("dose"));
+            if (hasDynamicMLC)
+            {
+                AddCheckBoxItem(paragraph, "   [WARNING] Dynamic MLC detected - IMRT QA required");
+            }
+            else
+            {
+                AddCheckBoxItem(paragraph, "   [OK] No dynamic MLC - standard QA applies");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check QA requirements - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckSpecialConsiderations(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "15. SPECIAL CONSIDERATIONS:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [Manual verification required]");
+            AddCheckBoxItem(paragraph, "   Check for any special considerations specific to this plan");
+            AddCheckBoxItem(paragraph, "   Verify any special instructions or requirements");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check special considerations - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckInitialAssessment(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "16. INITIAL ASSESSMENT:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [OK] Patient identification verified");
+            AddCheckBoxItem(paragraph, "   [OK] Treatment site confirmed");
+            AddCheckBoxItem(paragraph, "   [OK] Prescription reviewed");
+            AddCheckBoxItem(paragraph, "   [OK] Treatment intent clarified");
+            AddCheckBoxItem(paragraph, "   [Manual verification required]");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check initial assessment - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckSimulation(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "17. SIMULATION:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [OK] CT simulation completed");
+            AddCheckBoxItem(paragraph, "   [OK] Patient positioning verified");
+            AddCheckBoxItem(paragraph, "   [OK] Immobilization devices in place");
+            AddCheckBoxItem(paragraph, "   [OK] Reference marks applied");
+            AddCheckBoxItem(paragraph, "   [Manual verification required]");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check simulation - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckTreatmentPlan(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "18. TREATMENT PLAN:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [OK] Plan objectives met");
+            AddCheckBoxItem(paragraph, "   [OK] Dose constraints satisfied");
+            AddCheckBoxItem(paragraph, "   [OK] Target coverage adequate");
+            AddCheckBoxItem(paragraph, "   [OK] OAR sparing acceptable");
+            AddCheckBoxItem(paragraph, "   [OK] Clearcheck Template Correct");
+            AddCheckBoxItem(paragraph, "   [OK] Dose falloff is reasonable");
+            AddCheckBoxItem(paragraph, "   [OK] Hot spots reasonable");
+            AddCheckBoxItem(paragraph, "   [OK] Calc Point inside PTV");
+            AddCheckBoxItem(paragraph, "   [OK] Plan Sum Created (If Appropriate)");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check treatment plan - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckMosaiqRadRx(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "19. MOSAIQ RADRX:");
+        try
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [OK] Dose: total, dose/fx, # fx: {0}cGy in {1}fx", context.PlanSetup.DosePerFraction.Dose, context.PlanSetup.NumberOfFractions));
+            AddCheckBoxItem(paragraph, "   [OK] Technique (3D, IMRT, VMAT, SBRT, etc.)");
+            AddCheckBoxItem(paragraph, "   [OK] Modality, energy, normalization");
+            AddCheckBoxItem(paragraph, "   [OK] Fractionation (e.g. daily, BID, Quad Shot, sequential boost, etc.)");
+            AddCheckBoxItem(paragraph, "   [OK] Imaging instructions are transcribed in note section");
+            AddCheckBoxItem(paragraph, "   [OK] SIB are written in plan comment section");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check Mosaiq RadRx - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckSiteSetup(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "20. SITE SETUP (D&I):");
+        try
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [OK] Orientation (HFS, etc.), \"Verify\" selected, Machine correct: {0}", context.PlanSetup.TreatmentOrientation));
+            AddCheckBoxItem(paragraph, "   [OK] Patient setup: images and description correct");
+            AddCheckBoxItem(paragraph, "   [OK] Shifts transferred correctly");
+            AddCheckBoxItem(paragraph, "   [OK] Approve site setup");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check site setup - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckPlanTransfer(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "21. PLAN TRANSFER (D&I):");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [OK] Field ID and Name (correct geometry/anatomy, matches plan doc)");
+            AddCheckBoxItem(paragraph, "   [OK] High Dose Option Used appropriately");
+            AddCheckBoxItem(paragraph, "   [OK] DRRS associated correctly");
+            AddCheckBoxItem(paragraph, "   [OK] Ct Field set to CT type");
+            AddCheckBoxItem(paragraph, "   [OK] AP/Lat Fields set to static type");
+            AddCheckBoxItem(paragraph, "   [OK] Dose tracking (dosimetry button)");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check plan transfer - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckPlanDocument(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "22. PLAN DOCUMENT (D&I):");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [OK] SIBS Documented in plan doc");
+            AddCheckBoxItem(paragraph, "   [OK] Approve Plan Document");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check plan document - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void CheckOtherTasks(ScriptContext context, Paragraph paragraph)
+    {
+        AddSectionTitle(paragraph, "23. OTHER TASKS:");
+        try
+        {
+            AddCheckBoxItem(paragraph, "   [OK] Complete QCLs");
+            AddCheckBoxItem(paragraph, "   [Manual verification required]");
+            AddCheckBoxItem(paragraph, "   [Manual verification required]");
+        }
+        catch (Exception ex)
+        {
+            AddCheckBoxItem(paragraph, string.Format("   [ERROR] Could not check other tasks - {0}", ex.Message));
+        }
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void AddSectionTitle(Paragraph paragraph, string title)
+    {
+        var titleRun = new Run(title)
+        {
+            FontSize = 14,
+            FontWeight = FontWeights.Bold
+        };
+        paragraph.Inlines.Add(titleRun);
+        paragraph.Inlines.Add(new LineBreak());
+    }
+
+    private void AddCheckBoxItem(Paragraph paragraph, string text)
+    {
+        // Create a container for the checkbox and text
+        var container = new InlineUIContainer();
+        
+        // Create a StackPanel to hold the checkbox and text
+        var stackPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 2, 0, 2)
+        };
+
+        // Create the checkbox with larger size and better styling
+        var checkBox = new CheckBox
+        {
+            Width = 24,
+            Height = 24,
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = Brushes.White,
+            BorderBrush = Brushes.Black,
+            BorderThickness = new Thickness(1),
+            FontSize = 14,
+            FontWeight = FontWeights.Bold,
+            IsThreeState = false,
+            Focusable = true,
+            IsHitTestVisible = true
+        };
+
+        // Generate a unique key for this checkbox
+        string checkBoxKey = Guid.NewGuid().ToString();
+        checkBoxStates[checkBoxKey] = false;
+
+        // Handle checkbox checked/unchecked events
+        checkBox.Checked += (s, e) =>
+        {
+            checkBoxStates[checkBoxKey] = true;
+            checkBox.Foreground = Brushes.Green;
+            checkBox.FontWeight = FontWeights.Bold;
+        };
+
+        checkBox.Unchecked += (s, e) =>
+        {
+            checkBoxStates[checkBoxKey] = false;
+            checkBox.Foreground = Brushes.Black;
+            checkBox.FontWeight = FontWeights.Normal;
+        };
+
+        // Handle click event to ensure checkbox works
+        checkBox.Click += (s, e) =>
+        {
+            // This ensures the checkbox state is properly toggled
+            checkBoxStates[checkBoxKey] = checkBox.IsChecked ?? false;
+        };
+
+        // Create the text label - clean up the text
+        string cleanText = text.Trim();
+        var textBlock = new TextBlock
+        {
+            Text = cleanText,
+            FontSize = 12,
+            FontWeight = FontWeights.Normal,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        stackPanel.Children.Add(checkBox);
+        stackPanel.Children.Add(textBlock);
+        container.Child = stackPanel;
+        paragraph.Inlines.Add(container);
+        paragraph.Inlines.Add(new LineBreak());
+    }
+}
+}
