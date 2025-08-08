@@ -91,6 +91,21 @@ namespace VMS.TPS
     /// </summary>
     public class PlanCheckWindow : Window
     {
+        private static string TryGetBeamName(VMS.TPS.Common.Model.API.Beam beam)
+        {
+            try
+            {
+                var type = beam.GetType();
+                var nameProp = type.GetProperty("Name") ?? type.GetProperty("Label") ?? type.GetProperty("FieldName");
+                if (nameProp != null)
+                {
+                    var value = nameProp.GetValue(beam) as string;
+                    return value ?? string.Empty;
+                }
+            }
+            catch { }
+            return string.Empty;
+        }
         #region Private Fields
         
         /// <summary>Eclipse script context containing patient, course, and plan data</summary>
@@ -108,8 +123,11 @@ namespace VMS.TPS
         /// <summary>Main tab control containing verification results</summary>
         private TabControl tabControl;
         
-        /// <summary>Dictionary mapping tab names to their corresponding TextBox controls for content display</summary>
-        private Dictionary<string, TextBox> tabTextBoxes = new Dictionary<string, TextBox>();
+        /// <summary>Dictionary mapping tab names to their corresponding RichTextBox controls for content display</summary>
+        private Dictionary<string, RichTextBox> tabRichTextBoxes = new Dictionary<string, RichTextBox>();
+        private List<string> warningItems = new List<string>();
+        private List<string> criticalItems = new List<string>();
+        private Dictionary<string, bool> dosiChecked = new Dictionary<string, bool>();
         
         #endregion
 
@@ -225,10 +243,11 @@ namespace VMS.TPS
             tabControl = new TabControl
             {
                 Background = Brushes.White,
-                Margin = new Thickness(10)
+                Margin = new Thickness(10),
+                TabStripPlacement = Dock.Top
             };
 
-            string[] tabs = { "Plan Info", "Dose", "Beams", "Structures", "Isocenter", "Status" };
+            string[] tabs = { "Plan Info", "Dose", "Beams", "Structures", "Isocenter", "Status", "Dosi Helper" };
             
             foreach (string tabName in tabs)
             {
@@ -240,14 +259,7 @@ namespace VMS.TPS
                     Background = Brushes.LightGray
                 };
 
-                var scrollViewer = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    Background = Brushes.White
-                };
-
-                var textBox = new TextBox
+                var richTextBox = new RichTextBox
                 {
                     FontFamily = new FontFamily("Consolas"),
                     FontSize = 16,
@@ -255,19 +267,28 @@ namespace VMS.TPS
                     Background = Brushes.White,
                     BorderThickness = new Thickness(0),
                     Padding = new Thickness(15),
-                    TextWrapping = TextWrapping.Wrap,
-                    AcceptsReturn = true,
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
                     IsReadOnly = true,
-                    Text = ""
+                    FlowDirection = FlowDirection.LeftToRight
                 };
 
-                scrollViewer.Content = textBox;
-                tabItem.Content = scrollViewer;
+                // Ensure the FlowDocument uses a sensible page width to avoid per-character wrapping
+                richTextBox.Document.PagePadding = new Thickness(0);
+                richTextBox.Document.TextAlignment = TextAlignment.Left;
+                richTextBox.Document.PageWidth = Math.Max(600, richTextBox.ActualWidth - 30);
+
+                // Keep the document width in sync with control size
+                richTextBox.SizeChanged += (s, e) =>
+                {
+                    var control = (RichTextBox)s;
+                    control.Document.PageWidth = Math.Max(600, control.ActualWidth - 30);
+                };
+
+                tabItem.Content = richTextBox;
 
                 tabControl.Items.Add(tabItem);
-                tabTextBoxes[tabName] = textBox;
+                tabRichTextBoxes[tabName] = richTextBox;
             }
 
             Grid.SetRow(tabControl, 1);
@@ -301,7 +322,37 @@ namespace VMS.TPS
             };
             closeButton.Click += (sender, e) => this.Close();
 
+            var printDosiButton = new Button
+            {
+                Content = "Print Dosi Helper",
+                Width = 160,
+                Height = 30,
+                Margin = new Thickness(5)
+            };
+            printDosiButton.Click += (sender, e) =>
+            {
+                // Switch to Dosi Helper tab and print its content
+                try
+                {
+                    this.tabControl.SelectedItem = this.tabControl.Items.Cast<TabItem>().FirstOrDefault(t => (string)t.Header == "Dosi Helper");
+                    RichTextBox dosiRtb;
+                    if (tabRichTextBoxes.TryGetValue("Dosi Helper", out dosiRtb))
+                    {
+                        var pd = new System.Windows.Controls.PrintDialog();
+                        if (pd.ShowDialog() == true)
+                        {
+                            pd.PrintDocument(((IDocumentPaginatorSource)dosiRtb.Document).DocumentPaginator, "Dosi Helper");
+                        }
+                    }
+                }
+                catch
+                {
+                    MessageBox.Show("Unable to print Dosi Helper.", "Print Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
             buttonPanel.Children.Add(refreshButton);
+            buttonPanel.Children.Add(printDosiButton);
             buttonPanel.Children.Add(closeButton);
 
             Grid.SetRow(buttonPanel, 2);
@@ -320,6 +371,7 @@ namespace VMS.TPS
                 UpdateTab("Structures", plan);
                 UpdateTab("Isocenter", plan);
                 UpdateTab("Status", plan);
+                UpdateTab("Dosi Helper", plan);
             }
             catch (Exception ex)
             {
@@ -351,51 +403,187 @@ namespace VMS.TPS
                 case "Status":
                     CheckPlanStatus(plan, sb);
                     break;
+                case "Dosi Helper":
+                    BuildFixHelper(sb);
+                    break;
             }
 
-            TextBox textBox = null;
-            if (tabTextBoxes.TryGetValue(tabName, out textBox))
+            RichTextBox richTextBox = null;
+            if (tabRichTextBoxes.TryGetValue(tabName, out richTextBox))
             {
-                textBox.Text = FormatTextForDisplay(sb.ToString());
+                if (tabName == "Dosi Helper")
+                {
+                    SetDosiHelperTable(richTextBox);
+                }
+                else
+            {
+                SetFormattedText(richTextBox, sb.ToString());
+                }
             }
         }
 
-        private string FormatTextForDisplay(string text)
+        private void SetFormattedText(RichTextBox richTextBox, string text)
         {
-            var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.None);
-            var formattedLines = new List<string>();
+            richTextBox.Document.Blocks.Clear();
+            richTextBox.Document.FlowDirection = FlowDirection.LeftToRight;
             
-            foreach (var line in lines)
+            var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.None);
+            
+            foreach (var raw in lines)
             {
-                // Check if line is a main section title (numbered sections)
-                if (line.Contains(". ") && (line.Contains("INFORMATION:") || line.Contains("STATUS")))
+                // Skip empty lines to compact content
+                if (string.IsNullOrWhiteSpace(raw))
+                    continue;
+
+                // Skip visual separator lines (====, ----, ***)
+                string trimmed = raw.Trim();
+                if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^[=\-_*]{3,}$"))
+                    continue;
+
+                // Left-align: remove any leading indentation whitespace
+                string line = raw.TrimStart();
+                // Normalize list markers: replace bullets/check boxes with check marks for cleaner display
                 {
-                    formattedLines.Add("═══ " + line.ToUpper() + " ═══");
+                    string ltrim = line;
+                    if (ltrim.StartsWith("• ") || ltrim.StartsWith("□ "))
+                    {
+                        line = "✓ " + ltrim.Substring(2);
+                    }
+                    // Replace heavy green check emoji with simple check mark for cleaner styling
+                    if (line.Contains("✅"))
+                    {
+                        line = line.Replace("✅", "✓");
+                    }
                 }
-                // Check if line is a subsection title (contains specific keywords)
-                else if (line.Contains("CHECKLIST:") || line.Contains("REQUIREMENTS:") || 
-                         line.Contains("VERIFICATION:") || line.Contains("ASSESSMENT:") || 
-                         line.Contains("ANALYSIS:") || line.Contains("DISTRIBUTION:") ||
-                         line.Contains("DETAILS:") || line.Contains("SUMMARY:"))
+
+                // Determine line type flags first
+                bool isMainHeader = line.Contains(". ") && (line.Contains("INFORMATION:") || line.Contains("STATUS"));
+                bool isSubHeader = line.Contains("CHECKLIST:") || line.Contains("REQUIREMENTS:") ||
+                                   line.Contains("VERIFICATION:") || line.Contains("ASSESSMENT:") ||
+                                   line.Contains("ANALYSIS:") || line.Contains("DISTRIBUTION:") ||
+                                   line.Contains("DETAILS:") || line.Contains("SUMMARY:");
+                bool isIconHeader = (line.Contains("💊") || line.Contains("🎯") || line.Contains("🔍") ||
+                                     line.Contains("📋") || line.Contains("🛡️") || line.Contains("🏭") ||
+                                     line.Contains("📊") || line.Contains("📷") || line.Contains("🖼️") ||
+                                     line.Contains("🛏️") || line.Contains("📍")) &&
+                                     (line.Contains(":") && line.Length < 100);
+
+                bool isWarningLine = line.Contains("⚠️") || 
+                                   line.Contains("🚨") ||
+                                   line.Contains("BOLUS DETECTED") ||
+                                   line.Contains("EXCESSIVE") ||
+                                   line.Contains("LARGE SHIFT") ||
+                                   line.Contains("NOT inside BODY") ||
+                                   line.Contains("CRITICAL") ||
+                                   line.Contains("WARNING") ||
+                                   line.Contains("ALERT") ||
+                                   line.Contains("POOR COVERAGE") ||
+                                   line.Contains("REVIEW REQUIRED") ||
+                                   line.Contains("LINAC2 NOT COMPATIBLE") ||
+                                   line.Contains("PTV LENGTH WARNING") ||
+                                   line.Contains("HOTSPOT CHECK REQUIRED") ||
+                                   line.Contains("❌") ||
+                                   (line.Contains("Check") && (line.Contains("⚠️") || line.Contains("VERIFY")));
+                
+                // Create paragraph and apply compact margins. Add a small top margin before headers only.
+                var paragraph = new Paragraph();
+                paragraph.FlowDirection = FlowDirection.LeftToRight;
+                paragraph.Margin = new Thickness(0, (isMainHeader || isSubHeader || isIconHeader) ? 8 : 0, 0, (isMainHeader || isSubHeader || isIconHeader) ? 2 : 0);
+
+                var run = new Run(line);
+                
+                // Special-case: Bolus Check color treatment
+                bool isBolusCheck = line.TrimStart().StartsWith("🛡️ Bolus Check:");
+
+                if (isBolusCheck)
                 {
-                    formattedLines.Add("*** " + line + " ***");
+                    bool noBolus = line.ToUpper().Contains("NO BOLUS DETECTED");
+                    run.Text = ">>> " + line + " <<<";
+                    run.FontWeight = FontWeights.Bold;
+                    run.Foreground = noBolus ? Brushes.Black : Brushes.Red;
+                    if (!noBolus)
+                    {
+                        if (!warningItems.Contains(line)) warningItems.Add(line);
+                    }
                 }
-                // Check for icon-based section headers
-                else if ((line.Contains("💊") || line.Contains("🎯") || line.Contains("🔍") ||
-                         line.Contains("📋") || line.Contains("🛡️") || line.Contains("🏭") ||
-                         line.Contains("📊") || line.Contains("📷") || line.Contains("🖼️") ||
-                         line.Contains("🛏️") || line.Contains("📍")) && 
-                         (line.Contains(":") && line.Length < 100))
+                // Emphasize specific plan info lines
+                else if (line.Contains("SiB Status:") && line.ToUpper().Contains("YES"))
                 {
-                    formattedLines.Add(">>> " + line + " <<<");
+                    run.Text = line;
+                    run.Foreground = Brushes.Red;
                 }
-                else
+                else if (isMainHeader)
                 {
-                    formattedLines.Add(line);
+                    run.Text = "═══ " + line.ToUpper() + " ═══";
+                    run.FontWeight = FontWeights.Bold;
+                    run.FontSize = 18;
+                    run.Foreground = Brushes.Black;
+                }
+                else if (isSubHeader)
+                {
+                    run.Text = "*** " + line + " ***";
+                    run.FontWeight = FontWeights.Bold;
+                    run.FontSize = 16;
+                    run.Foreground = Brushes.Black;
+                }
+                else if (isIconHeader)
+                {
+                    // For Status tab and generally cleaner look, render icon headers as plain text with check marks when appropriate
+                    // Replace leading markers with a simple check when they are positive statements
+                    run.Text = line.Replace("✅", "✓");
+                    run.Foreground = Brushes.Black;
+                }
+                // Blue highlight for key prescription/technique lines
+                else if (
+                    line.Contains("Rx Site:") ||
+                    line.Contains("Technique:") ||
+                    line.Contains("Plan Normalization:") ||
+                    line.Contains("Normalization Method:") ||
+                    line.Contains("Total Dose:") ||
+                    line.Contains("Dose Per Fraction:") ||
+                    line.Contains("Number of Fractions:"))
+                {
+                    run.Foreground = Brushes.DarkBlue;
+                }
+                else if (isWarningLine)
+                {
+                    // Prefix with warning icon if not already a check mark line
+                    if (!line.TrimStart().StartsWith("⚠️") && !line.TrimStart().StartsWith("✓"))
+                    {
+                        line = "⚠️ " + line.TrimStart();
+                        run.Text = line;
+                    }
+                    run.Foreground = Brushes.Red;
+                    // Make warnings red but not bold for cleaner readability
+                    // Collect alerts for FixHelper tab
+                    if (line.Contains("🚨") || line.Contains("❌") || line.ToUpper().Contains("CRITICAL"))
+                    {
+                        if (!criticalItems.Contains(line)) criticalItems.Add(line);
+                    }
+                    else
+                    {
+                        if (!warningItems.Contains(line)) warningItems.Add(line);
+                    }
+                }
+                else if (line.TrimStart().StartsWith("✓") || line.Contains("EXCELLENT") || line.Contains("GOOD"))
+                {
+                    run.Foreground = Brushes.Black;
+                }
+                
+                paragraph.Inlines.Add(run);
+                richTextBox.Document.Blocks.Add(paragraph);
+
+                // Add a visual spacer after headers/group titles for readability
+                if (isMainHeader || isSubHeader || isIconHeader)
+                {
+                    var spacer = new Paragraph
+                    {
+                        Margin = new Thickness(0, 4, 0, 0),
+                        FlowDirection = FlowDirection.LeftToRight
+                    };
+                    richTextBox.Document.Blocks.Add(spacer);
                 }
             }
-            
-            return string.Join(Environment.NewLine, formattedLines);
         }
 
         #endregion
@@ -472,42 +660,47 @@ namespace VMS.TPS
                 {
                     sb.AppendLine("✓ Dose Per Fraction: " + plan.DosePerFraction.Dose.ToString("F1") + " cGy");
                 }
-                
                 if (plan.NumberOfFractions != null)
                 {
                     sb.AppendLine("✓ Number of Fractions: " + plan.NumberOfFractions.ToString());
                 }
-                
                 if (plan.TotalDose != null)
                 {
                     sb.AppendLine("✓ Total Dose: " + plan.TotalDose.Dose.ToString("F1") + " cGy (" + (plan.TotalDose.Dose / 100).ToString("F1") + " Gy)");
                 }
-                
                 // Plan Normalization Information
                 if (plan.PlanNormalizationValue != 0)
                 {
                     sb.AppendLine("✓ Plan Normalization: " + plan.PlanNormalizationValue.ToString("F1") + "%");
                 }
-                
                 if (plan.PlanNormalizationMethod != null)
                 {
                     sb.AppendLine("✓ Normalization Method: " + plan.PlanNormalizationMethod.ToString());
                 }
                 
-                // Check for SiB (Simultaneous Integrated Boost)
+                // Check for SiB (Simultaneous Integrated Boost) - neutral summary (actions shown in Dosi Helper)
                 bool sibDetected = false;
                 if (plan.StructureSet != null)
                 {
                     var structures = plan.StructureSet.Structures;
-                    var ptvStructures = structures.Where(s => s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")).ToList();
+                    var ptvStructures = structures
+                        .Where(s => (s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")) &&
+                                    !(s.Id.Length > 0 && (s.Id[0] == 'z' || s.Id[0] == 'Z'))) 
+                        .ToList();
                     
                     if (ptvStructures.Count > 1)
                     {
                         sibDetected = true;
-                        sb.AppendLine("⚠️ MULTIPLE PTV DETECTED - Possible SiB Plan:");
+                        sb.AppendLine("SiB summary: Multiple PTVs detected (excludes zPTV). See Dosi Helper for actions.");
                         foreach (var ptv in ptvStructures)
                         {
                             sb.AppendLine("   • " + ptv.Id + " (Volume: " + ptv.Volume.ToString("F1") + " cm³)");
+                        }
+
+                        if (plan.NumberOfFractions != null)
+                        {
+                            int numFx = plan.NumberOfFractions.Value;
+                            sb.AppendLine("   • Fractionation: " + numFx + " fx");
                         }
                     }
                 }
@@ -689,24 +882,15 @@ namespace VMS.TPS
                         sb.AppendLine("   • " + analysis);
                     }
                 }
-                sb.AppendLine("□ Modality: " + string.Join("/", modalities));
-                sb.AppendLine("□ Energy: " + string.Join(", ", energies));
-                sb.AppendLine("□ Rx Dose: " + (plan.TotalDose != null ? plan.TotalDose.Dose.ToString("F1") + " cGy" : "____________________"));
-                sb.AppendLine("□ Fractionation Dose: " + (plan.DosePerFraction != null ? plan.DosePerFraction.Dose.ToString("F1") + " cGy" : "____________________"));
-                sb.AppendLine("□ Number of Fractions: " + (plan.NumberOfFractions != null ? plan.NumberOfFractions.ToString() : "____________________"));
-                sb.AppendLine("□ SiB Status: " + (sibDetected ? "YES - Multiple PTV detected" : "NO - Single target"));
-                sb.AppendLine("□ Pattern: Daily");
+                sb.AppendLine("✓ Modality: " + string.Join("/", modalities));
+                sb.AppendLine("✓ Energy: " + string.Join(", ", energies));
+                sb.AppendLine("✓ Rx Dose: " + (plan.TotalDose != null ? plan.TotalDose.Dose.ToString("F1") + " cGy" : "____________________"));
+                sb.AppendLine("✓ Fractionation Dose: " + (plan.DosePerFraction != null ? plan.DosePerFraction.Dose.ToString("F1") + " cGy" : "____________________"));
+                sb.AppendLine("✓ Number of Fractions: " + (plan.NumberOfFractions != null ? plan.NumberOfFractions.ToString() : "____________________"));
+                sb.AppendLine("✓ SiB Status: " + (sibDetected ? "YES - Multiple PTV detected" : "NO - Single target"));
+                sb.AppendLine("✓ Pattern: Daily");
                 
-                sb.AppendLine();
-                sb.AppendLine("✅ VERIFICATION CHECKLIST:");
-                sb.AppendLine("□ Rx Site matches treatment area");
-                sb.AppendLine("□ Technique correctly selected");
-                sb.AppendLine("□ Modality matches beam energies");
-                sb.AppendLine("□ Total dose entered correctly");
-                sb.AppendLine("□ Dose per fraction matches");
-                sb.AppendLine("□ Number of fractions correct");
-                sb.AppendLine("□ SiB designation verified if applicable");
-                sb.AppendLine("□ Pattern (Daily/Weekly) selected");
+                // Move verification checklist after laterality/positioning
                 
                 sb.AppendLine();
                 sb.AppendLine("💊 BREATHING MOTION MANAGEMENT:");
@@ -745,7 +929,7 @@ namespace VMS.TPS
                     breathingIndicators.Add("Free Breathing (FB) detected in plan name/ID");
                 }
                 
-                // Check image information for 4DCT
+                // Check image information for 4DCT and ABC/FB indicators in CT image label
                 if (plan.StructureSet != null && plan.StructureSet.Image != null)
                 {
                     string imageId = plan.StructureSet.Image.Id.ToUpper();
@@ -753,6 +937,17 @@ namespace VMS.TPS
                     {
                         breathingCompensationDetected = true;
                         breathingIndicators.Add("4DCT or averaged CT detected: " + plan.StructureSet.Image.Id);
+                    }
+                    if (imageId.Contains("IABC") || imageId.Contains("EABC") || imageId.Contains("ABC"))
+                    {
+                        breathingCompensationDetected = true;
+                        if (imageId.Contains("IABC")) breathingIndicators.Add("iABC detected in CT image label: " + plan.StructureSet.Image.Id);
+                        if (imageId.Contains("EABC")) breathingIndicators.Add("eABC detected in CT image label: " + plan.StructureSet.Image.Id);
+                        if (!imageId.Contains("IABC") && !imageId.Contains("EABC")) breathingIndicators.Add("ABC detected in CT image label: " + plan.StructureSet.Image.Id);
+                    }
+                    if (imageId.Contains("FB") || imageId.Contains("FREE"))
+                    {
+                        breathingIndicators.Add("Free Breathing (FB) indicated in CT image label: " + plan.StructureSet.Image.Id);
                     }
                 }
                 
@@ -769,7 +964,7 @@ namespace VMS.TPS
                     sb.AppendLine("   □ eABC (exhale Active Breathing Coordinator)");
                     sb.AppendLine("   □ Breath Hold technique");
                     sb.AppendLine("   □ 4DCT with motion management");
-                    sb.AppendLine("   □ Technique documented in Mosaiq");
+                    sb.AppendLine("   □ Technique documented in Mosaiq (verify CT image properties/CTPN and SIM notes)");
                     sb.AppendLine("   □ Motion management instructions clear");
                     sb.AppendLine("   □ Patient coaching protocol established");
                 }
@@ -882,6 +1077,17 @@ namespace VMS.TPS
                     sb.AppendLine("✓ Standard positioning detected");
                     sb.AppendLine("   □ Verify positioning matches simulation setup");
                 }
+                sb.AppendLine();
+                sb.AppendLine("*** ✓ VERIFICATION CHECKLIST: ***");
+                sb.AppendLine("Dosimetrist please check the following in the plan");
+                sb.AppendLine("✓ Rx Site matches treatment area");
+                sb.AppendLine("✓ Technique correctly selected");
+                sb.AppendLine("✓ Modality matches beam energies");
+                sb.AppendLine("✓ Total dose entered correctly");
+                sb.AppendLine("✓ Dose per fraction matches");
+                sb.AppendLine("✓ Number of fractions correct");
+                sb.AppendLine("✓ SiB designation verified if applicable");
+                sb.AppendLine("✓ Pattern (Daily/Weekly) selected");
                 
             }
             catch (Exception ex)
@@ -956,7 +1162,7 @@ namespace VMS.TPS
                     
                     var structures = plan.StructureSet.Structures.ToList();
                     var ptvs = structures.Where(s => s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")).ToList();
-                    var ctvs = structures.Where(s => s.DicomType == "CTV" || s.Id.ToUpper().Contains("CTV")).ToList();
+                    var ctvs = structures.Where(s => (s.DicomType == "CTV" || s.Id.ToUpper().Contains("CTV")) && !(s.Id.Contains("-CTV") || s.Id.Contains("-ctv"))).ToList();
                     var gtvs = structures.Where(s => s.DicomType == "GTV" || s.Id.ToUpper().Contains("GTV")).ToList();
                     var itvs = structures.Where(s => s.DicomType == "ITV" || s.Id.ToUpper().Contains("ITV")).ToList();
                     var allTargets = ptvs.Concat(ctvs).Concat(gtvs).Concat(itvs).ToList();
@@ -967,16 +1173,12 @@ namespace VMS.TPS
                     sb.AppendLine("   • GTVs: " + gtvs.Count);
                     sb.AppendLine("   • ITVs: " + itvs.Count);
                     
-                    // SiB Detection and Alert
+                    // SiB Detection and Alert (exclude any PTV starting with 'z' or 'Z') - actions moved to Dosi Helper tab
+                    ptvs = ptvs.Where(p => !(p.Id.Length > 0 && (p.Id[0] == 'z' || p.Id[0] == 'Z'))).ToList();
                     if (ptvs.Count > 1)
                     {
                         sb.AppendLine();
-                        sb.AppendLine("🚨 MULTIPLE PTV DETECTED - POSSIBLE SiB (SIMULTANEOUS INTEGRATED BOOST) PLAN!");
-                        sb.AppendLine("================================================================");
-                        sb.AppendLine("⚠️ VERIFY: Multiple dose levels in single plan");
-                        sb.AppendLine("⚠️ CONFIRM: Proper dose prescription for each PTV");
-                        sb.AppendLine("⚠️ CHECK: Mosaiq setup for SiB technique");
-                        sb.AppendLine();
+                        sb.AppendLine("SiB summary: Multiple PTVs detected. See Dosi Helper for actions.");
                     }
                     
                     // Comprehensive Target Structure V95% Analysis with Individual Prescription Detection
@@ -1065,13 +1267,22 @@ namespace VMS.TPS
                                     // Show prescription detection results
                                     if (structType == "PTV")
                                     {
+                                        bool isZptv = target.Id.Length > 0 && (target.Id[0] == 'z' || target.Id[0] == 'Z');
                                         if (foundIndividualDose)
                                         {
                                             sb.AppendLine("   ✓ Detected Prescription: " + (targetPrescriptionDose.Dose / 100.0).ToString("F1") + " Gy");
                                         }
                                         else
                                         {
+                                            // For zPTV-like structures, avoid SiB warning tone
+                                            if (isZptv)
+                                            {
+                                                sb.AppendLine("   ✓ Using Plan Total Dose: " + (targetPrescriptionDose.Dose / 100.0).ToString("F1") + " Gy");
+                                        }
+                                        else
+                                        {
                                             sb.AppendLine("   ⚠️ Using Plan Total Dose: " + (targetPrescriptionDose.Dose / 100.0).ToString("F1") + " Gy");
+                                            }
                                         }
                                     }
                                     
@@ -1142,7 +1353,7 @@ namespace VMS.TPS
                                     sb.AppendLine("✓ Medium Objectives (Priority 2-100): " + mediumObjectives);
                                     sb.AppendLine("✓ Lower Objectives (Priority >100): " + lowObjectives);
                                     
-                                    // Analysis of optimization strategy
+                                    // Analysis of optimization strategy (suppress single-target 'lower objectives' warning)
                                     if (lowerObjectives > 0)
                                     {
                                         if (ptvs.Count > 1)
@@ -1153,14 +1364,6 @@ namespace VMS.TPS
                                             sb.AppendLine("   ✓ Plan appears optimized for multiple targets");
                                             sb.AppendLine("   ✓ Hierarchical optimization strategy used");
                                             sb.AppendLine("   □ Verify objective priorities match clinical intent");
-                                        }
-                                        else
-                                        {
-                                            sb.AppendLine();
-                                            sb.AppendLine("⚠️ LOWER OBJECTIVES WITH SINGLE TARGET:");
-                                            sb.AppendLine("   ⚠️ " + lowerObjectives + " lower priority objectives found");
-                                            sb.AppendLine("   ⚠️ May indicate OAR sparing optimization");
-                                            sb.AppendLine("   □ Verify optimization strategy is appropriate");
                                         }
                                     }
                                     else if (ptvs.Count > 1)
@@ -1420,7 +1623,7 @@ namespace VMS.TPS
                 
                 // Energy analysis
                 var energyGroups = treatmentBeams.GroupBy(b => b.EnergyModeDisplayName).ToList();
-                sb.AppendLine("✓ Energy Modes Used:");
+                sb.AppendLine("*** ✓ ENERGY MODES USED: ***");
                 foreach (var energyGroup in energyGroups)
                 {
                     var beamCount = energyGroup.Count();
@@ -1430,9 +1633,9 @@ namespace VMS.TPS
                 
                 // Enhanced gantry angle analysis with rotation direction
                 sb.AppendLine();
-                sb.AppendLine("✓ Gantry Angle Distribution:");
                 var gantryAngles = new List<string>();
                 var muAlerts = new List<string>();
+                var rotationSequence = new List<string>(); // CW/CCW per arc order
                 
                 foreach (var beam in treatmentBeams.Take(10)) // Limit to avoid clutter
                 {
@@ -1442,6 +1645,7 @@ namespace VMS.TPS
                         var endAngle = beam.ControlPoints.Last().GantryAngle;
                         double beamMU = beam.Meterset.Value;
                         string energy = beam.EnergyModeDisplayName;
+                        string machineId = beam.TreatmentUnit != null ? beam.TreatmentUnit.Id.ToUpper() : string.Empty;
                         
                         if (Math.Abs(startAngle - endAngle) < 1) // Static beam
                         {
@@ -1449,26 +1653,14 @@ namespace VMS.TPS
                         }
                         else // Arc beam
                         {
-                            // Determine rotation direction
-                            string direction = "";
-                            double angleDiff = endAngle - startAngle;
-                            
-                            // Handle angle wrapping (0°/360°)
-                            if (angleDiff > 180)
-                                angleDiff -= 360;
-                            else if (angleDiff < -180)
-                                angleDiff += 360;
-                            
-                            if (angleDiff > 0)
-                                direction = " (CW)";
-                            else if (angleDiff < 0)
-                                direction = " (CCW)";
-                            
+                            // Determine rotation direction by sampling control point deltas (robust across 0°/360° wrap)
+                            string direction = GetArcDirection(beam);
                             gantryAngles.Add(beam.Id + ": " + startAngle.ToString("F0") + "° → " + endAngle.ToString("F0") + "°" + direction);
+                            rotationSequence.Add(direction.Contains("CW") ? "CW" : direction.Contains("CCW") ? "CCW" : "");
                         }
                         
-                        // Check MU limits for FFF beams
-                        if (energy.Contains("FFF") && energy.Contains("6X"))
+                        // Check MU limits for FFF beams (only if plan uses Linac2)
+                        if (machineId.Contains("LINAC2") && energy.Contains("FFF") && energy.Contains("6X"))
                         {
                             if (beamMU > 1400)
                             {
@@ -1478,6 +1670,87 @@ namespace VMS.TPS
                     }
                 }
                 
+                // Check alternation CW/CCW for VMAT arcs BEFORE listing distribution
+                var vmatArcBeams = treatmentBeams
+                    .Where(b => !b.IsSetupField && b.MLCPlanType.ToString().ToUpper().Contains("VMAT") && b.ControlPoints != null && b.ControlPoints.Any())
+                    .ToList();
+                var vmatArcDirections = new List<string>(); // CW/CCW in delivery order
+                foreach (var beam in vmatArcBeams)
+                {
+                    var first = beam.ControlPoints.First();
+                    var last = beam.ControlPoints.Last();
+                    double startAngle = first.GantryAngle;
+                    double endAngle = last.GantryAngle;
+                    if (Math.Abs(endAngle - startAngle) < 1) continue; // skip static just in case
+                    double rawDiff = endAngle - startAngle;
+                    if (rawDiff > 180) rawDiff -= 360; else if (rawDiff < -180) rawDiff += 360;
+                    vmatArcDirections.Add(rawDiff < 0 ? "CW" : "CCW");
+                }
+
+                if (vmatArcDirections.Count >= 2)
+                {
+                    int cwCount = vmatArcDirections.Count(d => d == "CW");
+                    int ccwCount = vmatArcDirections.Count(d => d == "CCW");
+
+                    bool patternOk = false;
+                    switch (vmatArcDirections.Count)
+                    {
+                        case 2:
+                            patternOk = cwCount == 1 && ccwCount == 1;
+                            break;
+                        case 3:
+                            patternOk = (cwCount == 2 && ccwCount == 1) || (cwCount == 1 && ccwCount == 2);
+                            break;
+                        case 4:
+                            patternOk = cwCount == 2 && ccwCount == 2;
+                            break;
+                        default:
+                            patternOk = cwCount > 0 && ccwCount > 0;
+                            break;
+                    }
+
+                    if (!patternOk)
+                    {
+                        // Prostate SBRT exception: allow same-direction arcs
+                        bool isSBRT = plan.PlanType.ToString().ToUpper().Contains("SBRT") || plan.Id.ToUpper().Contains("SBRT");
+                        bool looksLikeProstate = false;
+                        try
+                        {
+                            if (plan.StructureSet != null)
+                            {
+                                looksLikeProstate = plan.StructureSet.Structures.Any(s =>
+                                    s.Id.ToUpper().Contains("PROS") ||
+                                    s.Id.ToUpper().Contains("PROSTATE") ||
+                                    s.Id.ToUpper().Contains("SV") ||
+                                    s.Id.ToUpper().Contains("PTV") && (s.Id.ToUpper().Contains("PROS") || s.Id.ToUpper().Contains("PZ"))
+                                );
+                            }
+                        }
+                        catch { }
+
+                        bool isSRS = plan.PlanType.ToString().ToUpper().Contains("SRS") || plan.Id.ToUpper().Contains("SRS");
+                        if ((isSBRT && looksLikeProstate) || isSRS)
+                        {
+                            sb.AppendLine();
+                            sb.AppendLine("✅ Rotation Alternation: Pattern acceptable for Prostate SBRT/SRS");
+                        }
+                        else
+                        {
+                            sb.AppendLine();
+                            sb.AppendLine("⚠️ Rotation Alternation: Arc directions not optimal");
+                            sb.AppendLine("   • Rule: 2 arcs → CW/CCW; 3 arcs → 2/1 split; 4 arcs → 2 CW and 2 CCW");
+                            sb.AppendLine("   • Exception: Prostate SBRT / SRS cases may use different patterns");
+                        }
+                    }
+                    else
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine("✅ Rotation Alternation: Arc direction pattern acceptable");
+                    }
+                }
+
+                // Now list the gantry angle distribution
+                sb.AppendLine("✓ Gantry Angle Distribution:");
                 foreach (var angle in gantryAngles)
                 {
                     sb.AppendLine("   • " + angle);
@@ -1502,10 +1775,17 @@ namespace VMS.TPS
                 
                 // Collimator analysis
                 sb.AppendLine();
-                sb.AppendLine("✓ Treatment Beam Summary:");
+                sb.AppendLine();
+                sb.AppendLine("*** ✓ TREATMENT BEAM SUMMARY: ***");
                 foreach (var beam in treatmentBeams.Take(8))
                 {
-                    sb.AppendLine("Beam: " + beam.Id);
+                    string beamIdLabel = beam.Id != null ? beam.Id : string.Empty;
+                    string beamNameLabel = TryGetBeamName(beam);
+                    sb.AppendLine("Beam: " + beamIdLabel + (string.IsNullOrWhiteSpace(beamNameLabel) ? "" : " | Name: " + beamNameLabel));
+                    if (string.IsNullOrWhiteSpace(beamIdLabel) || string.IsNullOrWhiteSpace(beamNameLabel))
+                    {
+                        sb.AppendLine("  ⚠️ Label Check: Beam ID and Name should be filled");
+                    }
                     sb.AppendLine("  ✓ Energy: " + beam.EnergyModeDisplayName);
                     sb.AppendLine("  ✓ Monitor Units: " + beam.Meterset.Value.ToString("F1") + " MU");
                     sb.AppendLine("  ✓ Treatment Unit: " + beam.TreatmentUnit.Id);
@@ -1517,6 +1797,21 @@ namespace VMS.TPS
                         sb.AppendLine("  ✓ Gantry Angle: " + firstCP.GantryAngle.ToString("F1") + "°");
                         sb.AppendLine("  ✓ Collimator Angle: " + firstCP.CollimatorAngle.ToString("F1") + "°");
                         sb.AppendLine("  ✓ Couch Angle: " + firstCP.PatientSupportAngle.ToString("F1") + "°");
+                        
+                        // Validate rotation label vs actual arc direction when applicable
+                        string label = (beamNameLabel + " " + beamIdLabel).ToUpper();
+                        bool labelCW = label.Contains(" CW") || label.EndsWith("CW");
+                        bool labelCCW = label.Contains(" CCW") || label.EndsWith("CCW");
+                        double startAngle = firstCP.GantryAngle;
+                        double endAngle = beam.ControlPoints.Last().GantryAngle;
+                        // Use sampled control points for actual direction
+                        string actualDir = GetArcDirection(beam);
+                        bool actualCW = actualDir.Contains("CW");
+                        bool actualCCW = actualDir.Contains("CCW");
+                        if ((labelCW && !actualCW) || (labelCCW && !actualCCW))
+                        {
+                            sb.AppendLine("  ⚠️ Rotation Label Mismatch: Label suggests " + (labelCW ? "CW" : "CCW") + ", actual is " + (actualCW ? "CW" : actualCCW ? "CCW" : "Static") );
+                        }
                         
                         // SSD information (with error handling) - Display in cm
                         try
@@ -1532,13 +1827,14 @@ namespace VMS.TPS
                     // DRR verification for treatment beams
                     if (beam.ReferenceImage != null)
                     {
-                        sb.AppendLine("  ✅ DRR: " + beam.ReferenceImage.Id);
+                        sb.AppendLine("  ✓ DRR: " + beam.ReferenceImage.Id);
                     }
                     else
                     {
                         sb.AppendLine("  ❌ DRR: Not assigned - VERIFY DRR CREATION");
                     }
-                    
+                    sb.AppendLine();
+                    sb.AppendLine("------------------------------------------------------------");
                     sb.AppendLine();
                 }
                 
@@ -1556,7 +1852,13 @@ namespace VMS.TPS
                     
                     foreach (var setupBeam in setupBeams)
                     {
-                        sb.AppendLine("Setup Beam: " + setupBeam.Id);
+                        string setupId = setupBeam.Id != null ? setupBeam.Id : string.Empty;
+                        string setupName = TryGetBeamName(setupBeam);
+                        sb.AppendLine("Setup Beam: " + setupId + (string.IsNullOrWhiteSpace(setupName) ? "" : " | Name: " + setupName));
+                        if (string.IsNullOrWhiteSpace(setupId) || string.IsNullOrWhiteSpace(setupName))
+                        {
+                            sb.AppendLine("  ⚠️ Label Check: Setup field ID and Name should be filled");
+                        }
                         sb.AppendLine("  ✓ Energy: " + setupBeam.EnergyModeDisplayName);
                         sb.AppendLine("  ✓ Treatment Unit: " + setupBeam.TreatmentUnit.Id);
                         
@@ -1594,7 +1896,7 @@ namespace VMS.TPS
                         {
                             if (setupBeam.ReferenceImage != null)
                             {
-                                sb.AppendLine("  ✅ DRR: Available (" + setupBeam.ReferenceImage.Id + ")");
+                                sb.AppendLine("  ✓ DRR: Available (" + setupBeam.ReferenceImage.Id + ")");
                             }
                             else
                             {
@@ -1605,7 +1907,8 @@ namespace VMS.TPS
                         {
                             sb.AppendLine("  ⚠️ DRR: Status unknown");
                         }
-                        
+                        sb.AppendLine();
+                        sb.AppendLine("------------------------------------------------------------");
                         sb.AppendLine();
                     }
                     
@@ -1643,7 +1946,7 @@ namespace VMS.TPS
                 
                 // Enhanced structure categorization
                 var ptvs = structures.Where(s => s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")).ToList();
-                var ctvs = structures.Where(s => s.DicomType == "CTV" || s.Id.ToUpper().Contains("CTV")).ToList();
+                var ctvs = structures.Where(s => (s.DicomType == "CTV" || s.Id.ToUpper().Contains("CTV")) && !(s.Id.Contains("-CTV") || s.Id.Contains("-ctv"))).ToList();
                 var gtvs = structures.Where(s => s.DicomType == "GTV" || s.Id.ToUpper().Contains("GTV")).ToList();
                 var itvs = structures.Where(s => s.DicomType == "ITV" || s.Id.ToUpper().Contains("ITV")).ToList();
                 var targets = ptvs.Concat(ctvs).Concat(gtvs).Concat(itvs).ToList();
@@ -1739,51 +2042,131 @@ namespace VMS.TPS
                     sb.AppendLine("📊 DOSE STATISTICS & HOTSPOT ANALYSIS:");
                     sb.AppendLine("=====================================");
                     
-                    // Plan maximum dose
-                    var maxDose = plan.Dose.DoseMax3D;
+                    // Detect technique to tailor max dose guidance (3D-CRT vs others)
+                    bool is3DCRT = false;
+                    try
+                    {
+                        if (plan.Beams != null && plan.Beams.Any(b => !b.IsSetupField))
+                        {
+                            var mlcTypesUpper = plan.Beams.Where(b => !b.IsSetupField)
+                                .Select(b => b.MLCPlanType.ToString().ToUpper())
+                                .ToList();
+                            bool anyVMAT = mlcTypesUpper.Any(t => t.Contains("VMAT"));
+                            bool anyIMRT = mlcTypesUpper.Any(t => t.Contains("IMRT"));
+                            // If not VMAT and not IMRT, treat as 3D-CRT style delivery
+                            is3DCRT = !anyVMAT && !anyIMRT;
+                        }
+                    }
+                    catch { }
+                    
+                    // Plan maximum dose (definition: global plan dose max)
+                    var maxDose = plan.Dose.DoseMax3D; // May be relative (%) or absolute (cGy)
+                    double planMaxAbsGy = 0.0;
+                    double planMaxPct = 0.0;
+                    bool haveAbs = false; bool havePct = false;
                     if (maxDose.IsRelativeDoseValue)
                     {
-                        sb.AppendLine("✓ Plan Maximum Dose: " + maxDose.Dose.ToString("F1") + "%");
+                        planMaxPct = maxDose.Dose; havePct = true;
+                        if (plan.TotalDose != null && plan.TotalDose.Dose > 0)
+                        {
+                            planMaxAbsGy = (plan.TotalDose.Dose / 100.0) * (planMaxPct / 100.0);
+                            haveAbs = true;
+                        }
                     }
                     else
                     {
-                        sb.AppendLine("✓ Plan Maximum Dose: " + (maxDose.Dose / 100.0).ToString("F1") + " Gy");
+                        planMaxAbsGy = maxDose.Dose / 100.0; haveAbs = true;
+                        if (plan.TotalDose != null && plan.TotalDose.Dose > 0)
+                        {
+                            planMaxPct = planMaxAbsGy / (plan.TotalDose.Dose / 100.0) * 100.0;
+                            havePct = true;
+                        }
                     }
+                    if (havePct && haveAbs)
+                        sb.AppendLine("✓ Plan Maximum Dose: " + planMaxPct.ToString("F1") + "% (" + planMaxAbsGy.ToString("F1") + " Gy)");
+                    else if (havePct)
+                        sb.AppendLine("✓ Plan Maximum Dose: " + planMaxPct.ToString("F1") + "%");
+                    else
+                        sb.AppendLine("✓ Plan Maximum Dose: " + planMaxAbsGy.ToString("F1") + " Gy");
                     
-                    // Find which structure contains the maximum dose
+                    // Locate structure closest to plan max dose (tolerant to voxel rounding)
                     bool maxDoseInPTV = false;
                     string maxDoseStructure = "Unknown";
-                    
+                    double bestDiffGy = double.MaxValue;
+                    double toleranceGy = 0.3; // ~0.3 Gy tolerance
                     foreach (var structure in structures.Where(s => !s.IsEmpty))
                     {
                         try
                         {
                             var structureMaxDose = plan.GetDoseAtVolume(structure, 0.0, VolumePresentation.Relative, DoseValuePresentation.Absolute);
-                            if (Math.Abs(structureMaxDose.Dose - maxDose.Dose) < 10.0) // Within 0.1 Gy
+                            double structMaxGy = structureMaxDose.Dose / 100.0;
+                            double diff = (haveAbs ? Math.Abs(structMaxGy - planMaxAbsGy) : double.MaxValue);
+                            if (diff < bestDiffGy)
                             {
+                                bestDiffGy = diff;
                                 maxDoseStructure = structure.Id;
-                                if (structure.DicomType == "PTV" || structure.Id.ToUpper().Contains("PTV"))
-                                {
-                                    maxDoseInPTV = true;
-                                }
-                                break;
+                                maxDoseInPTV = (structure.DicomType == "PTV" || structure.Id.ToUpper().Contains("PTV"));
                             }
                         }
-                        catch
-                        {
-                            // Continue if dose calculation fails for this structure
-                        }
+                        catch { }
                     }
                     
-                    if (maxDoseInPTV)
+                    // Compare PTV Dmax vs Plan Dmax
+                    var ptvListForMax = structures.Where(s => (s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")) && !(s.Id.Length > 0 && (s.Id[0] == 'z' || s.Id[0] == 'Z'))).ToList();
+                    double ptvDmaxDose = 0.0;
+                    string ptvDmaxName = "(none)";
+                    foreach (var ptv in ptvListForMax)
                     {
-                        sb.AppendLine("✅ Maximum dose located in: " + maxDoseStructure + " (PTV - GOOD)");
+                        try
+                        {
+                            var dmax = plan.GetDoseAtVolume(ptv, 0.0, VolumePresentation.Relative, DoseValuePresentation.Absolute);
+                            if (dmax.Dose > ptvDmaxDose)
+                            {
+                                ptvDmaxDose = dmax.Dose;
+                                ptvDmaxName = ptv.Id;
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (!is3DCRT)
+                    {
+                        if (maxDoseInPTV && bestDiffGy <= toleranceGy)
+                        {
+                            sb.AppendLine("✅ Plan Max Dose Location: " + maxDoseStructure + " (inside PTV)");
                     }
                     else
                     {
-                        sb.AppendLine("⚠️ Maximum dose located in: " + maxDoseStructure + " (NOT in PTV)");
-                        sb.AppendLine("   □ Verify hotspot location is clinically acceptable");
-                        sb.AppendLine("   □ Consider optimization to reduce hotspot");
+                            sb.AppendLine("⚠️ Plan Max Dose Location: " + maxDoseStructure + " (outside PTV) — Verify acceptability");
+                        }
+                    }
+                    else
+                    {
+                        sb.AppendLine("🧪 3D-CRT: Plan Max Dose Location: " + maxDoseStructure + " — Investigate regardless of PTV location");
+                    }
+
+                    if (ptvDmaxDose > 0)
+                    {
+                        double percentOfPlan = 0.0;
+                        if (haveAbs && planMaxAbsGy > 0)
+                            percentOfPlan = (ptvDmaxDose / 100.0) / planMaxAbsGy * 100.0; // both Gy
+                        else if (havePct)
+                        {
+                            // Compute PTV Dmax in % using Rx conversion
+                            double ptvDmaxPct = (plan.TotalDose != null && plan.TotalDose.Dose > 0) ? ((ptvDmaxDose / 100.0) / (plan.TotalDose.Dose / 100.0) * 100.0) : 0.0;
+                            percentOfPlan = planMaxPct > 0 ? (ptvDmaxPct / planMaxPct * 100.0) : 0.0;
+                        }
+                        sb.AppendLine("📊 PTV Dmax vs Plan Dmax: " + ptvDmaxName + " Dmax = " + (ptvDmaxDose / 100.0).ToString("F1") + " Gy (" + percentOfPlan.ToString("F1") + "% of plan max)");
+                        if ((haveAbs && (ptvDmaxDose/100.0 + 0.1 < planMaxAbsGy)) || (havePct && percentOfPlan < 99.5))
+                        {
+                            sb.AppendLine("   ⚠️ PTV Dmax is lower than plan max — investigate location of plan max");
+                        }
+                    }
+                    
+                    if (is3DCRT)
+                    {
+                        sb.AppendLine("   □ Review wedges/field junctions and normalization");
+                        sb.AppendLine("   □ Consider hotspot mitigation if indicated");
                     }
                     
                     // Hotspot volume analysis using 107% of prescription dose
@@ -1819,58 +2202,7 @@ namespace VMS.TPS
                             }
                         }
                         
-                        // Max dose >V0.035cc location analysis
-                        sb.AppendLine();
-                        sb.AppendLine("📍 MAX DOSE >V0.035cc LOCATION ANALYSIS:");
-                        
-                        string maxDoseStructureLocation = "Unknown";
-                        bool foundMaxDoseStructure = false;
-                        
-                        // Check each structure to find which contains max dose >0.035cc
-                        foreach (var structure in structures.Where(s => !s.IsEmpty))
-                        {
-                            try
-                            {
-                                // Get volume receiving max dose in this structure
-                                var volumeAtMaxDose = plan.GetVolumeAtDose(structure, maxDose, VolumePresentation.AbsoluteCm3);
-                                
-                                if (volumeAtMaxDose > 0.035)
-                                {
-                                    maxDoseStructureLocation = structure.Id;
-                                    foundMaxDoseStructure = true;
-                                    
-                                    if (structure.DicomType == "PTV" || structure.Id.ToUpper().Contains("PTV"))
-                                    {
-                                        sb.AppendLine("✅ Max dose >V0.035cc located in: " + structure.Id + " (PTV - ACCEPTABLE)");
-                                        sb.AppendLine("   ✓ Volume at max dose: " + volumeAtMaxDose.ToString("F3") + " cc");
-                                    }
-                                    else if (structure.DicomType == "EXTERNAL" || structure.Id.ToUpper().Contains("BODY"))
-                                    {
-                                        sb.AppendLine("⚠️ Max dose >V0.035cc located in: " + structure.Id + " (BODY/EXTERNAL)");
-                                        sb.AppendLine("   ⚠️ Volume at max dose: " + volumeAtMaxDose.ToString("F3") + " cc");
-                                        sb.AppendLine("   □ Verify location within or near PTV");
-                                    }
-                                    else
-                                    {
-                                        sb.AppendLine("🚨 Max dose >V0.035cc located in: " + structure.Id + " (CRITICAL REVIEW NEEDED)");
-                                        sb.AppendLine("   🚨 Volume at max dose: " + volumeAtMaxDose.ToString("F3") + " cc");
-                                        sb.AppendLine("   □ URGENT: Verify if this location is clinically acceptable");
-                                        sb.AppendLine("   □ Consider plan optimization to move hotspot");
-                                        sb.AppendLine("   □ Document clinical justification if acceptable");
-                                    }
-                                    break; // Found the structure with max dose >0.035cc
-                                }
-                            }
-                            catch
-                            {
-                                // Continue checking other structures
-                            }
-                        }
-                        
-                        if (!foundMaxDoseStructure)
-                        {
-                            sb.AppendLine("✅ Max dose volume <0.035cc - No significant hotspot volume detected");
-                        }
+                        // Removed the V0.035cc-based max dose location analysis per updated definition
                     }
                     catch
                     {
@@ -1890,7 +2222,31 @@ namespace VMS.TPS
                         sb.AppendLine();
                         sb.AppendLine("📊 PTV COVERAGE ANALYSIS:");
                         sb.AppendLine("-------------------------");
-                        
+                        // Pre-scan PTV names to detect SiB doses and establish lower dose level
+                        double detectedMinPtvDoseCgy = 0.0;
+                        double detectedMaxPtvDoseCgy = 0.0;
+                        try
+                        {
+                            foreach (var p in ptvs)
+                            {
+                                string name = (p.Id ?? string.Empty).ToUpper();
+                                var nums = System.Text.RegularExpressions.Regex.Matches(name, @"\d{4,5}");
+                                if (nums.Count > 0)
+                                {
+                                    double val = 0.0;
+                                    if (nums[0].Value.Length == 4) val = double.Parse(nums[0].Value); // cGy
+                                    else if (nums[0].Value.Length == 5) val = double.Parse(nums[0].Value) / 100.0;
+                                    if (val > 0)
+                                    {
+                                        if (detectedMinPtvDoseCgy == 0.0 || val < detectedMinPtvDoseCgy) detectedMinPtvDoseCgy = val;
+                                        if (val > detectedMaxPtvDoseCgy) detectedMaxPtvDoseCgy = val;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        bool likelySiB = detectedMaxPtvDoseCgy > 0 && detectedMinPtvDoseCgy > 0 && detectedMaxPtvDoseCgy != detectedMinPtvDoseCgy;
+
                         foreach (var ptv in ptvs.Take(5))
                         {
                             try
@@ -1948,6 +2304,17 @@ namespace VMS.TPS
                                         ptvPrescriptionDose = new DoseValue(meanDose.Dose * 1.05, meanDose.Unit); // Assume prescription is ~95% of mean
                                         foundIndividualDose = true;
                                     }
+
+                                    // If likely SiB and this PTV lacks explicit Rx (especially helper zPTV), use lower detected dose
+                                    bool isZptvName = ptv.Id.Length > 0 && (ptv.Id[0] == 'z' || ptv.Id[0] == 'Z');
+                                    if (likelySiB && !foundIndividualDose || (likelySiB && isZptvName))
+                                    {
+                                        if (detectedMinPtvDoseCgy > 0)
+                                        {
+                                            ptvPrescriptionDose = new DoseValue(detectedMinPtvDoseCgy, DoseValue.DoseUnit.cGy);
+                                            foundIndividualDose = true;
+                                        }
+                                    }
                                     
                                     // Calculate V95% coverage against individual prescription
                                     var coverage95Dose = new DoseValue(ptvPrescriptionDose.Dose * 0.95, ptvPrescriptionDose.Unit);
@@ -1998,16 +2365,30 @@ namespace VMS.TPS
                                         sb.AppendLine("   ✓ Detected Prescription: " + (ptvPrescriptionDose.Dose / 100.0).ToString("F1") + " Gy");
                                         sb.AppendLine("   ✓ V95% Dose Level: " + (coverage95Dose.Dose / 100.0).ToString("F1") + " Gy");
                                     }
+                    else
+                    {
+                        bool isZptv = ptv.Id.Length > 0 && (ptv.Id[0] == 'z' || ptv.Id[0] == 'Z');
+                        bool isSBRT = plan.PlanType.ToString().ToUpper().Contains("SBRT") || plan.Id.ToUpper().Contains("SBRT");
+                        if (isZptv)
+                        {
+                            // Exclude zPTV from this check entirely (helper volumes)
+                        }
+                        else if (isSBRT)
+                        {
+                            sb.AppendLine("   ✓ Using Plan Total Dose: " + (ptvPrescriptionDose.Dose / 100.0).ToString("F1") + " Gy");
+                                        sb.AppendLine("   ✓ V95% Dose Level: " + (coverage95Dose.Dose / 100.0).ToString("F1") + " Gy");
+                                    }
                                     else
                                     {
                                         sb.AppendLine("   ⚠️ Using Plan Total Dose: " + (ptvPrescriptionDose.Dose / 100.0).ToString("F1") + " Gy");
                                         sb.AppendLine("   ⚠️ V95% Dose Level: " + (coverage95Dose.Dose / 100.0).ToString("F1") + " Gy (may be incorrect for SiB)");
+                        }
                                     }
                                     
-                                    // PTV Coverage assessment
+                                    // PTV Coverage assessment (SiB-aware)
                                     if (volumeAt95 >= 95.0)
                                     {
-                                        sb.AppendLine("   ✅ V95%: " + volumeAt95.ToString("F1") + "% - EXCELLENT COVERAGE");
+                                        sb.AppendLine("   ✓ V95%: " + volumeAt95.ToString("F1") + "% - EXCELLENT COVERAGE");
                                     }
                                     else if (volumeAt95 >= 90.0)
                                     {
@@ -2015,8 +2396,15 @@ namespace VMS.TPS
                                     }
                                     else
                                     {
-                                        sb.AppendLine("   🚨 V95%: " + volumeAt95.ToString("F1") + "% - POOR COVERAGE (<90%)");
-                                        sb.AppendLine("      □ URGENT: Review plan optimization");
+                                        if (likelySiB)
+                                        {
+                                            sb.AppendLine("   ⚠️ V95%: " + volumeAt95.ToString("F1") + "% - Low coverage; verify lower-dose PTV prescription reference");
+                                        }
+                                        else
+                                        {
+                                            sb.AppendLine("   🚨 V95%: " + volumeAt95.ToString("F1") + "% - POOR COVERAGE (<90%)");
+                                            sb.AppendLine("      ✓ URGENT: Review plan optimization");
+                                        }
                                     }
                                     
                                     sb.AppendLine("   ✓ Max Dose: " + (ptvMaxDose.Dose / 100.0).ToString("F1") + " Gy");
@@ -2703,6 +3091,7 @@ namespace VMS.TPS
                 sb.AppendLine();
                 sb.AppendLine("🔍 AUTOMATED PLAN VERIFICATION RESULTS:");
                 sb.AppendLine("=======================================");
+                sb.AppendLine("*** GENERAL CHECKS: ***");
                 
                 // Bolus Check
                 bool hasBolus = false;
@@ -2710,23 +3099,64 @@ namespace VMS.TPS
                 {
                     hasBolus = plan.Beams.Any(b => b.Boluses != null && b.Boluses.Any());
                 }
-                sb.AppendLine("🛡️ Bolus Check: " + (hasBolus ? "✅ BOLUS DETECTED - Add to Mosaiq fields & site setup notes" : "✅ No bolus detected"));
+                sb.AppendLine("🛡️ Bolus Check: " + (hasBolus ? "⚠️ BOLUS DETECTED - Add to Mosaiq fields & site setup notes" : "✅ No bolus detected"));
                 
                 // Couch Check
                 bool hasCouch = false;
                 string couchInfo = "No couch detected";
+                string couchModel = "";
+                var expectedByMachine = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    {"LINAC1", "BrainLAB/iBeam Couch"},
+                    {"TB1", "BrainLAB/iBeam Couch"},
+                    {"LINAC2", "Exact IGRT Couch (Thin)"},
+                    {"TB2", "Exact IGRT Couch (Thin)"}
+                };
                 if (plan.Beams != null && plan.Beams.Any())
                 {
-                    var beamWithCouch = plan.Beams.FirstOrDefault(b => b.TreatmentUnit != null && 
-                        (b.TreatmentUnit.Id.ToUpper().Contains("COUCH") || 
-                         (plan.StructureSet != null && plan.StructureSet.Structures.Any(s => s.Id.ToUpper().Contains("COUCH")))));
-                    if (beamWithCouch != null || (plan.StructureSet != null && plan.StructureSet.Structures.Any(s => s.Id.ToUpper().Contains("COUCH"))))
+                    // Detect couch via structures; read Comment for precise model (see screenshots)
+                    var couchStruct = plan.StructureSet != null ? plan.StructureSet.Structures.FirstOrDefault(s => s.Id.ToUpper().Contains("COUCH")) : null;
+                    if (couchStruct != null)
                     {
                         hasCouch = true;
-                        couchInfo = "Couch detected - verify correct couch for treatment machine";
+                        var couchComment = string.Empty;
+                        try { couchComment = couchStruct.Comment; } catch { couchComment = string.Empty; }
+                        couchModel = string.IsNullOrWhiteSpace(couchComment) ? couchStruct.Id : couchComment;
+                        couchInfo = "Couch detected: " + couchModel;
                     }
                 }
+                // Provide machine-specific expected model guidance
+                var couchCheckMachines = plan.Beams != null ? plan.Beams.Where(b => !b.IsSetupField).Select(b => b.TreatmentUnit.Id).Distinct().ToList() : new List<string>();
+                if (hasCouch && couchCheckMachines.Any())
+                {
+                    foreach (var machine in couchCheckMachines)
+                    {
+                        string machineUpper = machine.ToUpper();
+                        string expected = expectedByMachine.FirstOrDefault(kv => machineUpper.Contains(kv.Key)).Value;
+                        if (!string.IsNullOrEmpty(expected))
+                        {
+                            // Normalize detected model from comment/id
+                            string detectedNorm = couchModel;
+                            if (!string.IsNullOrEmpty(couchModel))
+                            {
+                                string cmu = couchModel.ToUpper();
+                                if (cmu.Contains("IBEAM") || cmu.Contains("BRAINLAB")) detectedNorm = "BrainLAB/iBeam Couch";
+                                else if (cmu.Contains("EXACT") && cmu.Contains("IGRT")) detectedNorm = "Exact IGRT Couch (Thin)";
+                            }
+                            bool matches = !string.IsNullOrEmpty(detectedNorm) && detectedNorm.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0;
+                            sb.AppendLine("🛏️ Couch Check: " + (matches ? "✅ " : "⚠️ ") + "Detected: " + (string.IsNullOrEmpty(detectedNorm) ? "(unknown)" : detectedNorm) +
+                                " | Machine: " + machine + " | Expected: " + expected + (matches ? "" : " → Update model"));
+                        }
+                        else
+                        {
+                            sb.AppendLine("🛏️ Couch Check: " + (hasCouch ? "⚠️ " + couchInfo : "✅ " + couchInfo) + " | Machine: " + machine + " | Verify machine-specific model");
+                        }
+                    }
+                }
+                else
+                {
                 sb.AppendLine("🛏️ Couch Check: " + (hasCouch ? "⚠️ " + couchInfo : "✅ " + couchInfo));
+                }
                 
                 // CT Slice Check
                 int ctSlices = 0;
@@ -2737,17 +3167,21 @@ namespace VMS.TPS
                 sb.AppendLine("🖼️ CT Slice Check: " + (ctSlices > 399 ? "🚨 " + ctSlices + " slices - EXCESSIVE (>399)" : "✅ " + ctSlices + " slices - Acceptable"));
                 
                 // Patient Orientation Check
+                sb.AppendLine();
+                sb.AppendLine("*** PLAN CHECKS: ***");
                 string patientOrientation = plan.TreatmentOrientation.ToString();
                 bool isStandardOrientation = patientOrientation.Contains("HeadFirstSupine") || patientOrientation.Contains("HFS");
                 sb.AppendLine("🧑‍⚕️ Patient Orientation: " + (isStandardOrientation ? "✅ " + patientOrientation : "⚠️ " + patientOrientation + " - Verify coordinate interpretation"));
                 
-                // SiB Detection
+                // SiB Detection (exclude PTVs starting with 'z' or 'Z') - actions moved to Dosi Helper
                 var structures = plan.StructureSet != null ? plan.StructureSet.Structures.ToList() : new List<VMS.TPS.Common.Model.API.Structure>();
-                var ptvs = structures.Where(s => s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")).ToList();
+                var ptvs = structures.Where(s => (s.DicomType == "PTV" || s.Id.ToUpper().Contains("PTV")) && !(s.Id.Length > 0 && (s.Id[0] == 'z' || s.Id[0] == 'Z'))).ToList();
                 bool isSiB = ptvs.Count > 1;
-                sb.AppendLine("💊 SiB Check: " + (isSiB ? "🚨 SiB DETECTED (" + ptvs.Count + " PTVs) - Verify multiple dose levels in Mosaiq" : "✅ Single PTV plan"));
+                sb.AppendLine("💊 SiB Check: " + (isSiB ? "⚠️ Multiple PTVs detected - See Dosi Helper for actions" : "✅ Single PTV plan"));
                 
                 // Prescription Check
+                sb.AppendLine();
+                sb.AppendLine("*** DOSE CHECKS: ***");
                 sb.AppendLine("💊 Prescription Dose: " + (plan.TotalDose != null ? "✅ " + (plan.TotalDose.Dose / 100.0).ToString("F1") + " Gy" : "❌ Not defined"));
                 sb.AppendLine("💊 Fractionation: " + (plan.NumberOfFractions != null ? "✅ " + plan.NumberOfFractions + " fractions" : "❌ Not defined"));
                 
@@ -2782,7 +3216,7 @@ namespace VMS.TPS
                             var prescDose = plan.TotalDose;
                             var v95Dose = new DoseValue(prescDose.Dose * 0.95, prescDose.Unit);
                             var coverage = plan.GetVolumeAtDose(firstPTV, v95Dose, VolumePresentation.Relative);
-                            ptvCoverage = coverage >= 95.0 ? "✅ Primary PTV V95%: " + coverage.ToString("F1") + "%" : 
+                            ptvCoverage = coverage >= 95.0 ? "✓ Primary PTV V95%: " + coverage.ToString("F1") + "%" : 
                                          coverage >= 90.0 ? "⚠️ Primary PTV V95%: " + coverage.ToString("F1") + "%" : 
                                          "🚨 Primary PTV V95%: " + coverage.ToString("F1") + "% - REVIEW REQUIRED";
                         }
@@ -2795,6 +3229,8 @@ namespace VMS.TPS
                 sb.AppendLine("🎯 PTV Coverage: " + ptvCoverage);
                 
                 // Treatment Machine Check
+                sb.AppendLine();
+                sb.AppendLine("*** BEAM CHECKS: ***");
                 var machines = plan.Beams != null ? plan.Beams.Where(b => !b.IsSetupField).Select(b => b.TreatmentUnit.Id).Distinct().ToList() : new List<string>();
                 sb.AppendLine("🏭 Treatment Machine: " + (machines.Any() ? "✅ " + string.Join(", ", machines) : "❌ No treatment beams"));
                 
@@ -2922,6 +3358,21 @@ namespace VMS.TPS
                         
                         sb.AppendLine("⚡ Beam Energy: ✅ " + string.Join(", ", energies));
                         sb.AppendLine("⚡ Beam Technique: ✅ " + string.Join(", ", techniques) + " (MLC: " + string.Join(", ", mlcTypes) + ")");
+
+                        // SBRT technique check under beam technique
+                        bool isSBRT = plan.PlanType.ToString().ToUpper().Contains("SBRT") || plan.Id.ToUpper().Contains("SBRT");
+                        if (isSBRT)
+                        {
+                            sb.AppendLine("⚡ SBRT Technique Check: ✅ SBRT indicated by plan type/ID");
+                            if (plan.NumberOfFractions != null)
+                            {
+                                sb.AppendLine("   • Fractionation: " + plan.NumberOfFractions + " fx");
+                            }
+                        }
+                        else
+                        {
+                            sb.AppendLine("⚡ SBRT Technique Check: ✅ Not SBRT");
+                        }
                     }
                 }
                 
@@ -2944,6 +3395,8 @@ namespace VMS.TPS
                 sb.AppendLine("🫁 CT Scan Type: ✅ " + ctType + (ctType != "Standard CT" ? " - Add note to Rx & site setup" : ""));
                 
                 // Setup Structures Check
+                sb.AppendLine();
+                sb.AppendLine("*** STRUCTURE CHECKS: ***");
                 var setupStructures = structures.Where(s => s.Id.ToUpper().Contains("BB") || s.Id.ToUpper().Contains("ZBB")).ToList();
                 sb.AppendLine("📍 Setup Structures: " + (setupStructures.Any() ? "✅ " + setupStructures.Count + " BB structures found" : "⚠️ No BB structures detected"));
                 
@@ -2993,7 +3446,15 @@ namespace VMS.TPS
                     double shiftZ = Math.Abs(isocenter.z - userOrigin.z) / 10.0;
                     
                     bool largeShift = shiftX > 20 || shiftY > 20 || shiftZ > 20;
-                    sb.AppendLine("📏 Shift Check: " + (largeShift ? "🚨 LARGE SHIFT (>20cm) - Verify coordinates" : "✅ Standard shifts (<20cm)"));
+                    if (!largeShift)
+                    {
+                        sb.AppendLine("📏 Shift Check: ✅ Standard shifts (<20cm)");
+                    }
+                    else
+                    {
+                        // Defer detailed large shift alert to the Isocenter section earlier to avoid duplication in FixHelper
+                        sb.AppendLine("📏 Shift Check: ⚠️ Verify coordinates (see Isocenter section for details)");
+                    }
                 }
                 
                 // Empty Structures Check
@@ -3066,6 +3527,370 @@ namespace VMS.TPS
             }
         }
 
+        private void BuildFixHelper(StringBuilder sb)
+        {
+            // No-op: this method now only serves as a data collector placeholder
+        }
+
+        private void SetDosiHelperTable(RichTextBox richTextBox)
+        {
+            richTextBox.Document.Blocks.Clear();
+
+            var document = richTextBox.Document;
+
+            var title = new Paragraph(new Run("DOSIMETRY HELPER"))
+            {
+                FontWeight = FontWeights.Bold,
+                FontSize = 16,
+                Foreground = Brushes.Black,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            document.Blocks.Add(title);
+
+            var table = new Table
+            {
+                CellSpacing = 0
+            };
+            table.Columns.Add(new TableColumn { Width = GridLength.Auto }); // # fit to text
+            table.Columns.Add(new TableColumn { Width = new GridLength(500) }); // Check Item fixed width
+            table.Columns.Add(new TableColumn { Width = GridLength.Auto }); // Result fit to text
+            table.Columns.Add(new TableColumn { Width = GridLength.Auto }); // Dosi Checked fit to text
+
+            int index = 1;
+
+            // Collect entries with categories for sorting
+            var entries = new List<DosiEntry>();
+            foreach (var item in criticalItems.Distinct())
+            {
+                string check, evaluation;
+                ParseAlert(item, out check, out evaluation);
+                string guidance = GetDosiGuidance(check, evaluation, item);
+                string evaluationWithGuidance = string.IsNullOrWhiteSpace(guidance) ? evaluation : (string.IsNullOrWhiteSpace(evaluation) ? guidance : evaluation + "\n" + guidance);
+                string category = ClassifyDosiCategory(check, evaluation, item);
+                entries.Add(new DosiEntry { Category = category, Severity = "CRITICAL", Check = check, Evaluation = evaluationWithGuidance, Brush = Brushes.Red });
+            }
+            foreach (var item in warningItems.Distinct())
+            {
+                string check, evaluation;
+                ParseAlert(item, out check, out evaluation);
+                string guidance = GetDosiGuidance(check, evaluation, item);
+                string evaluationWithGuidance = string.IsNullOrWhiteSpace(guidance) ? evaluation : (string.IsNullOrWhiteSpace(evaluation) ? guidance : evaluation + "\n" + guidance);
+                string category = ClassifyDosiCategory(check, evaluation, item);
+                entries.Add(new DosiEntry { Category = category, Severity = "Warning", Check = check, Evaluation = evaluationWithGuidance, Brush = Brushes.DarkOrange });
+            }
+
+            // Sort by category order then severity
+            var order = new List<string> { "Plan Info", "Dose", "Beams", "Structures", "Isocenter", "Status" };
+            foreach (var group in entries
+                .OrderBy(e => order.IndexOf(e.Category) < 0 ? int.MaxValue : order.IndexOf(e.Category))
+                .ThenBy(e => e.Severity == "CRITICAL" ? 0 : 1)
+                .GroupBy(e => e.Category))
+            {
+                // Build a separate table per category, but keep global index
+                var catTable = new Table { CellSpacing = 0 };
+                catTable.Columns.Add(new TableColumn { Width = GridLength.Auto });
+                catTable.Columns.Add(new TableColumn { Width = new GridLength(500) });
+                catTable.Columns.Add(new TableColumn { Width = GridLength.Auto });
+                catTable.Columns.Add(new TableColumn { Width = GridLength.Auto });
+                var catHeaderGroup = new TableRowGroup();
+                // Category header row – place category title in the far-left cell
+                var catTitleRow = new TableRow();
+                var catTitleCell = new TableCell(new Paragraph(new Run(group.Key))
+                {
+                    FontWeight = FontWeights.Bold,
+                    Margin = new Thickness(6, 6, 6, 3)
+                })
+                {
+                    BorderBrush = Brushes.Gray,
+                    BorderThickness = new Thickness(0.5)
+                };
+                catTitleRow.Cells.Add(catTitleCell);
+                catTitleRow.Cells.Add(new TableCell(new Paragraph(new Run(""))) { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.5) });
+                catTitleRow.Cells.Add(new TableCell(new Paragraph(new Run(""))) { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.5) });
+                catTitleRow.Cells.Add(new TableCell(new Paragraph(new Run(""))) { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.5) });
+                catHeaderGroup.Rows.Add(catTitleRow);
+                var catHeader = new TableRow();
+                catHeader.Cells.Add(CreateHeaderCell("#"));
+                catHeader.Cells.Add(CreateHeaderCell("Check Item"));
+                catHeader.Cells.Add(CreateHeaderCell("Dosi Checked"));
+                catHeader.Cells.Add(CreateHeaderCell("Dose Checked"));
+                catHeaderGroup.Rows.Add(catHeader);
+                catTable.RowGroups.Add(catHeaderGroup);
+                var catRows = new TableRowGroup();
+                foreach (var e in group)
+                {
+                    catRows.Rows.Add(CreateDataRow(index++, e.Check, e.Evaluation, e.Severity, e.Brush));
+                }
+                catTable.RowGroups.Add(catRows);
+                document.Blocks.Add(catTable);
+            }
+
+            // Append MOSAIQ checklist after table
+            document.Blocks.Add(new Paragraph(new Run("\n📋 MOSAIQ COMMON CHECKLIST ITEMS:"))
+            {
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 10, 0, 4)
+            });
+            var mosaiqItems = new[]
+            {
+                "□ Complete QCLs in Mosaiq",
+                "□ Attach DRRs in Mosaiq",
+                "□ Check Dosimetry adds up in Mosaiq",
+                "□ Check Prescription is filled out",
+                "□ Check Prescription imaging notes added",
+                "□ Check High Dose Mode is used for SRS mode only (Not just SBRT cases)",
+                "□ Check Approve Site Setup in Mosaiq",
+                "□ Check Plan Documents are Planner approved in Mosaiq",
+                "□ Check Shift transferred correctly in Mosaiq",
+                "□ Check Patient Setup image and description is consistent",
+                "□ Check SiB in Rx if found in plan",
+                "□ Check ClearCheck template used and in plan report",
+                "□ Check ISO or Calc Point or Reference point exist inside PTV",
+                "□ Check Hotspots are reasonable",
+                "□ Check Dose Fall Off are reasonable",
+                "□ Check BEV for flash and margins"
+            };
+            foreach (var line in mosaiqItems)
+            {
+                document.Blocks.Add(new Paragraph(new Run(line)) { Margin = new Thickness(4, 0, 0, 0) });
+            }
+
+            document.Blocks.Add(new Paragraph(new Run("\n🫁 MOTION MANAGEMENT REMINDERS:"))
+            {
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 8, 0, 4)
+            });
+            var motionItems = new[]
+            {
+                "□ Add iABC/eABC note to plan documents",
+                "□ Add iABC/eABC note to Rx",
+                "□ Add iABC/eABC note to site setup",
+                "□ Verify motion management protocol followed"
+            };
+            foreach (var line in motionItems)
+            {
+                document.Blocks.Add(new Paragraph(new Run(line)) { Margin = new Thickness(4, 0, 0, 0) });
+            }
+        }
+
+        private static TableCell CreateHeaderCell(string text)
+        {
+            var cell = new TableCell(new Paragraph(new Run(text))
+            {
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(6, 3, 6, 3)
+            })
+            {
+                BorderBrush = Brushes.Gray,
+                BorderThickness = new Thickness(0.5)
+            };
+            return cell;
+        }
+
+        private TableRow CreateDataRow(int index, string check, string evaluation, string result, Brush resultBrush)
+        {
+            var row = new TableRow();
+            row.Cells.Add(CreateDataCell(index.ToString()));
+
+            // Combined Check + Evaluation cell: bold title, wrapped details below
+            var combinedPara = new Paragraph()
+            {
+                Margin = new Thickness(6, 3, 6, 3),
+                TextAlignment = TextAlignment.Left,
+                TextIndent = 0
+            };
+            if (!string.IsNullOrWhiteSpace(check))
+            {
+                combinedPara.Inlines.Add(new Run(check) { FontWeight = FontWeights.Bold });
+            }
+            if (!string.IsNullOrWhiteSpace(evaluation))
+            {
+                combinedPara.Inlines.Add(new LineBreak());
+                combinedPara.Inlines.Add(new Run(evaluation));
+            }
+            var combinedCell = new TableCell(combinedPara)
+            {
+                BorderBrush = Brushes.Gray,
+                BorderThickness = new Thickness(0.5)
+            };
+            row.Cells.Add(combinedCell);
+
+            // Checkbox: Dosi Checked
+            string key = (check + " | " + evaluation).Trim();
+            if (!dosiChecked.ContainsKey(key)) dosiChecked[key] = false;
+            var checkBox = new CheckBox { Content = "Addressed", IsChecked = dosiChecked[key] };
+            checkBox.Margin = new Thickness(4, 2, 4, 2);
+            checkBox.Checked += (s, e) => dosiChecked[key] = true;
+            checkBox.Unchecked += (s, e) => dosiChecked[key] = false;
+            var cbPara = new BlockUIContainer(checkBox);
+            var cbCell = new TableCell()
+            {
+                BorderBrush = Brushes.Gray,
+                BorderThickness = new Thickness(0.5)
+            };
+            cbCell.Blocks.Add(cbPara);
+            row.Cells.Add(cbCell);
+
+            var resultPara = new Paragraph(new Run(result))
+            {
+                FontWeight = FontWeights.Bold,
+                Foreground = resultBrush,
+                Margin = new Thickness(6, 3, 6, 3),
+                TextAlignment = TextAlignment.Left
+            };
+            var resultCell = new TableCell(resultPara)
+            {
+                BorderBrush = Brushes.Gray,
+                BorderThickness = new Thickness(0.5)
+            };
+            row.Cells.Add(resultCell);
+            return row;
+        }
+
+        private static TableCell CreateDataCell(string text)
+        {
+            var para = new Paragraph(new Run(text))
+            {
+                Margin = new Thickness(4, 2, 4, 2)
+            };
+            var cell = new TableCell(para)
+            {
+                BorderBrush = Brushes.Gray,
+                BorderThickness = new Thickness(0.5)
+            };
+            return cell;
+        }
+
+        private static bool ParseAlert(string line, out string check, out string evaluation)
+        {
+            // Heuristic: split on colon for title vs details
+            // Remove leading emoji markers
+            string cleaned = line.Trim();
+            if (cleaned.StartsWith("⚠️") || cleaned.StartsWith("🚨") || cleaned.StartsWith("❌"))
+            {
+                cleaned = cleaned.Substring(2).Trim();
+            }
+
+            int colon = cleaned.IndexOf(':');
+            if (colon > 0)
+            {
+                check = cleaned.Substring(0, colon).Trim();
+                evaluation = cleaned.Substring(colon + 1).Trim();
+            }
+            else
+            {
+                check = cleaned;
+                evaluation = "";
+            }
+            return true;
+        }
+
+        // Helper class to remain compatible with older C# versions (no value tuples)
+        private class DosiEntry
+        {
+            public string Category { get; set; }
+            public string Severity { get; set; }
+            public string Check { get; set; }
+            public string Evaluation { get; set; }
+            public Brush Brush { get; set; }
+        }
+
+        private static string ClassifyDosiCategory(string check, string evaluation, string raw)
+        {
+            string t = ((check + " " + evaluation + " " + raw) ?? string.Empty).ToUpper();
+            if (t.Contains("ISOCENTER") || t.Contains("USER ORIGIN") || t.Contains("COORDINATE") || t.Contains("SHIFT")) return "Isocenter";
+            if (t.Contains("GANTRY") || t.Contains("BEAM") || t.Contains("BOLUS") || t.Contains("DRR") || t.Contains("ROTATION") || t.Contains("COUCH") || t.Contains("TREATMENT UNIT")) return "Beams";
+            if (t.Contains("OAR") || t.Contains("STRUCTURE") || t.Contains("DENSITY") || t.Contains("ARTIFACT") || t.Contains("BODY") || t.Contains("EXTERNAL")) return "Structures";
+            if (t.Contains("DOSE") || t.Contains("V95%") || t.Contains("MAXIMUM DOSE") || t.Contains("HOTSPOT")) return "Dose";
+            if (t.Contains("MOSAIQ") || t.Contains("CHECKLIST") || t.Contains("CT SLICE") || t.Contains("CT SCAN TYPE") || t.Contains("APPROVAL")) return "Status";
+            return "Plan Info";
+        }
+
+        // Determine VMAT arc direction by integrating signed gantry deltas across control points
+        // Returns " (CW)", " (CCW)" or empty string if ambiguous/static
+        private static string GetArcDirection(VMS.TPS.Common.Model.API.Beam beam)
+        {
+            try
+            {
+                if (beam == null || beam.ControlPoints == null || !beam.ControlPoints.Any()) return string.Empty;
+                var cps = beam.ControlPoints.ToList();
+                if (cps.Count < 2) return string.Empty;
+                double sum = 0.0;
+                for (int i = 1; i < cps.Count; i++)
+                {
+                    double prev = cps[i - 1].GantryAngle;
+                    double curr = cps[i].GantryAngle;
+                    double d = curr - prev;
+                    if (d > 180) d -= 360; else if (d < -180) d += 360;
+                    sum += d;
+                }
+                // Per site convention: 0°→179° is CW, 179°→0° is CCW
+                // Map positive net change to CW, negative net change to CCW
+                if (sum > 1.0) return " (CW)";     // net increasing angle
+                if (sum < -1.0) return " (CCW)";   // net decreasing angle
+                return string.Empty;                 // effectively static/ambiguous
+            }
+            catch { return string.Empty; }
+        }
+
+        private string GetDosiGuidance(string check, string evaluation, string raw)
+        {
+            string c = (check ?? string.Empty).ToUpper();
+            string r = (raw ?? string.Empty).ToUpper();
+            var lines = new List<string>();
+
+            if (c.Contains("TREATMENT UNIT REQUIREMENTS"))
+            {
+                lines.Add("Action: Verify Mosaiq treatment unit matches Eclipse planned machine");
+                lines.Add("• Open Mosaiq Rx → Machine field");
+                lines.Add("• Confirm scheduling availability for the chosen machine");
+                lines.Add("• Ensure machine QA and accessories are available");
+            }
+            else if (c.Contains("HOTSPOT CHECK REQUIRED"))
+            {
+                lines.Add("Action: Investigate hotspot volume and location");
+                lines.Add("• Identify structure containing hotspot and clinical acceptability");
+                lines.Add("• Consider plan optimization to reduce hotspot");
+                lines.Add("• Document justification in plan notes if acceptable");
+            }
+            else if (c.Contains("BREATHING MOTION MANAGEMENT"))
+            {
+                lines.Add("Action: Confirm motion management technique");
+                lines.Add("• Check CT image label for iABC/eABC/FB/Free Breathing/Mean");
+                lines.Add("• Verify details in CT image properties, CTPN, and SIM notes");
+                lines.Add("• Document technique and instructions in Mosaiq Rx and site setup");
+            }
+            else if (r.Contains("COUCH CHECK") || c.Contains("COUCH"))
+            {
+                lines.Add("Action: Verify couch model by machine");
+                lines.Add("• Linac1: BrainLAB/iBeam couch; Linac2: Exact IGRT Couch (Thin)");
+                lines.Add("• If mismatch, update couch model and recalc dose if included");
+            }
+            else if (r.Contains("USING PLAN TOTAL DOSE"))
+            {
+                lines.Add("Action: Confirm prescription reference");
+                lines.Add("• SBRT or zPTV helper: plan total dose is acceptable reference");
+                lines.Add("• Otherwise, verify each PTV has intended Rx and V95% uses correct dose");
+            }
+            else if (c.Contains("LOWER OBJECTIVES WITH SINGLE TARGET"))
+            {
+                // Suppressed; no guidance needed.
+            }
+            else if (c.Contains("ROTATION ALTERNATION"))
+            {
+                lines.Add("Action: Review arc directions");
+                lines.Add("• 2 arcs → CW/CCW; 3 arcs → 2/1 split; 4 arcs → 2 CW + 2 CCW");
+                lines.Add("• Exception: Prostate SBRT / SRS may use different patterns");
+                lines.Add("• Update labels to match actual CW/CCW if needed");
+            }
+            else if (c.Contains("DRR CHECK"))
+            {
+                lines.Add("Action: Generate/attach DRRs to all treatment and setup beams in Mosaiq");
+            }
+
+            return string.Join("\n", lines);
+        }
+
         #endregion
 
         // End of PlanCheckWindow class
@@ -3085,3 +3910,4 @@ namespace VMS.TPS
         // comprehensive clinical parameter checking for Mosaiq integration.
     }
 }
+
